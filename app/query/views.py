@@ -178,15 +178,15 @@ def save_frame_labels(groups):
                 face_params[k] = face[k]
             all_faces.append(Face(**face_params))
 
-            all_genders.append(
-                FaceGender(face_id=None, gender_id=face['gender_id'], labeler=gender_labeler))
+            # all_genders.append(
+            #     FaceGender(face_id=None, gender_id=face['gender_id'], labeler=gender_labeler))
 
-            if 'identity_id' in face:
-                all_identities.append(
-                    FaceIdentity(
-                        face_id=None, identity_id=face['identity_id'], labeler=identity_labeler))
-            else:
-                all_identities.append(None)
+            # if 'identity_id' in face:
+            #     all_identities.append(
+            #         FaceIdentity(
+            #             face_id=None, identity_id=face['identity_id'], labeler=identity_labeler))
+            # else:
+            #     all_identities.append(None)
 
     Frame.tags.through.objects.bulk_create(all_tags)
 
@@ -196,8 +196,8 @@ def save_frame_labels(groups):
         g.face_id = f.id
         if i is not None:
             i.face_id = f.id
-    FaceGender.objects.bulk_create(all_genders)
-    FaceIdentity.objects.bulk_create([i for i in all_identities if i is not None])
+    # FaceGender.objects.bulk_create(all_genders)
+    # FaceIdentity.objects.bulk_create([i for i in all_identities if i is not None])
 
 
 def save_speaker_labels(groups):

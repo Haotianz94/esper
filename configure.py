@@ -11,7 +11,7 @@ import os
 import pathlib
 
 NGINX_PORT = '80'
-IPYTHON_PORT = '8888'
+IPYTHON_PORT = '8890'
 TF_VERSION = '1.11.0'
 
 cores = multiprocessing.cpu_count()

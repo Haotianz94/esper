@@ -18,9 +18,7 @@ from django.db.models import F
 from django.db.models.functions import Cast
 import django.db.models as models
 from query.base_models import Track
-from query.models import \
-    Face, FaceGender, FaceIdentity, Labeler, Video, Frame, Gender, Segment, Tag, Object, \
-    Topic, Identity, Clothing, HairColor, HairLength
+from query.models import Face, Labeler, Video, Frame, Segment, Tag, Object
 import django.apps
 import os
 
@@ -161,18 +159,20 @@ def qs_to_result(result: QuerySet,
                 'objects': []
             })
 
-    elif cls is Face or cls is FaceGender or cls is FaceIdentity or cls is Object or \
-            (cls is HairColor or cls is HairLength or cls is Clothing):
-        if cls is FaceGender or cls is FaceIdentity or (cls is HairColor or cls is HairLength or cls is Clothing):
-            frame_path = 'face__frame'
-            if cls is FaceGender:
-                result = result.select_related('face', 'gender')
-            elif cls is FaceIdentity:
-                result = result.select_related('face', 'identity')
-            else:
-                result = result.select_related('face')
-        else:
-            frame_path = 'frame'
+    # elif cls is Face or cls is FaceGender or cls is FaceIdentity or cls is Object or \
+    #         (cls is HairColor or cls is HairLength or cls is Clothing):
+    #     if cls is FaceGender or cls is FaceIdentity or (cls is HairColor or cls is HairLength or cls is Clothing):
+    #         frame_path = 'face__frame'
+    #         if cls is FaceGender:
+    #             result = result.select_related('face', 'gender')
+    #         elif cls is FaceIdentity:
+    #             result = result.select_related('face', 'identity')
+    #         else:
+    #             result = result.select_related('face')
+    #     else:
+    #         frame_path = 'frame'
+    elif cls is Face: 
+        frame_path = 'frame'
         result = result.select_related(frame_path)
 
         if not shuffle and deterministic_order:
@@ -180,12 +180,12 @@ def qs_to_result(result: QuerySet,
 
         if cls is Face or cls is Object:
             fn = bbox_to_dict
-        elif cls is FaceGender:
-            fn = gender_to_dict
-        elif cls is FaceIdentity:
-            fn = identity_to_dict
-        elif cls is HairColor or cls is HairLength or cls is Clothing:
-            fn = face_attr_to_dict
+        # elif cls is FaceGender:
+        #     fn = gender_to_dict
+        # elif cls is FaceIdentity:
+        #     fn = identity_to_dict
+        # elif cls is HairColor or cls is HairLength or cls is Clothing:
+        #     fn = face_attr_to_dict
         elif cls is Pose:
             fn = pose_to_dict
 

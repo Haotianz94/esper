@@ -45,7 +45,6 @@ Track = base.Track(Labeler)
 
 
 class Segment(Track):
-    topics = models.ManyToManyField(Topic)
     polarity = models.FloatField(null=True)
     subjectivity = models.FloatField(null=True)
 
