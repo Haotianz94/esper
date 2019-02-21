@@ -6,40 +6,8 @@ import tempfile
 import subprocess as sp
 
 
-class IdentityTag(models.Model):
-    name = base.CharField(unique=True)
-
-
-class Identity(models.Model):
-    name = base.CharField(unique=True)
-    tags = models.ManyToManyField(IdentityTag, blank=True)
-
-
-class CanonicalShow(models.Model):
-    name = base.CharField(unique=True)
-    is_recurring = models.BooleanField(default=False)
-    hosts = models.ManyToManyField(Identity, blank=True)
-
-
-class Show(models.Model):
-    name = base.CharField(unique=True)
-    hosts = models.ManyToManyField(Identity, blank=True)
-    canonical_show = models.ForeignKey(CanonicalShow)
-
-
-class Channel(models.Model):
-    name = base.CharField(unique=True)
-
-
 class Video(base.Video):
-    channel = models.ForeignKey(Channel)
-    show = models.ForeignKey(Show)
     time = models.DateTimeField()
-    commercials_labeled = models.BooleanField(default=False)
-    srt_extension = base.CharField()
-    threeyears_dataset = models.BooleanField(default=False)
-    duplicate = models.BooleanField(default=False)
-    corrupted = models.BooleanField(default=False)
 
     def get_stride(self):
         return int(math.ceil(self.fps) / 2)
@@ -72,23 +40,8 @@ class Labeler(base.Labeler):
     data_path = base.CharField(blank=True, null=True)
     created = models.DateTimeField(auto_now_add=True, null=True, blank=True)
 
-
 Labeled = base.Labeled(Labeler)
-
-
-class Gender(models.Model):
-    name = base.CharField()
-
-
 Track = base.Track(Labeler)
-
-
-class Commercial(Track):
-    pass
-
-
-class Topic(models.Model):
-    name = base.CharField(unique=True)
 
 
 class Segment(Track):
@@ -117,24 +70,6 @@ class Face(Labeled, base.BoundingBox, models.Model):
         unique_together = ('labeler', 'frame', 'bbox_x1', 'bbox_x2', 'bbox_y1', 'bbox_y2')
 
 
-class FaceGender(Labeled, models.Model):
-    face = models.ForeignKey(Face)
-    gender = models.ForeignKey(Gender)
-    probability = models.FloatField(default=1.)
-
-    class Meta:
-        unique_together = ('labeler', 'face')
-
-
-class FaceIdentity(Labeled, models.Model):
-    face = models.ForeignKey(Face)
-    identity = models.ForeignKey(Identity)
-    probability = models.FloatField(default=1.)
-
-    class Meta:
-        unique_together = ('labeler', 'face')
-
-
 class FaceFeatures(Labeled, base.Features, models.Model):
     face = models.ForeignKey(Face)
 
@@ -150,65 +85,3 @@ class Object(base.BoundingBox, models.Model):
     frame = models.ForeignKey(Frame)
     label = models.IntegerField()
     probability = models.FloatField()
-
-
-class LabeledCommercial(models.Model):
-    video = models.ForeignKey(Video)
-    start = models.FloatField()
-    end = models.FloatField()
-
-
-class LabeledPanel(models.Model):
-    video = models.ForeignKey(Video)
-    start = models.FloatField()
-    end = models.FloatField()
-    num_panelists = models.IntegerField()
-
-
-class LabeledInterview(models.Model):
-    video = models.ForeignKey(Video)
-    start = models.FloatField()
-    end = models.FloatField()
-    interviewer1 = base.CharField(default=None, blank=True, null=True)
-    interviewer2 = base.CharField(default=None, blank=True, null=True)
-    guest1 = base.CharField(default=None, blank=True, null=True)
-    guest2 = base.CharField(default=None, blank=True, null=True)
-    original = models.BooleanField(default=True)
-    scattered_clips = models.BooleanField(default=False)
-
-
-class HairColorName(models.Model):
-    name = base.CharField(unique=True)
-
-
-class HairColor(Labeled, models.Model):
-    face = models.ForeignKey(Face)
-    color = models.ForeignKey(HairColorName)
-
-    class Meta:
-        unique_together = ('labeler', 'face')
-
-
-class ClothingName(models.Model):
-    name = base.CharField(unique=True)
-
-
-class Clothing(Labeled, models.Model):
-    face = models.ForeignKey(Face)
-    clothing = models.ForeignKey(ClothingName)
-
-    class Meta:
-        unique_together = ('labeler', 'face')
-
-
-
-class HairLengthName(models.Model):
-    name = base.CharField(unique=True)
-
-
-class HairLength(Labeled, models.Model):
-    face = models.ForeignKey(Face)
-    length = models.ForeignKey(HairLengthName)
-
-    class Meta:
-        unique_together = ('labeler', 'face')
