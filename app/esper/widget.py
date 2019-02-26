@@ -348,7 +348,8 @@ def esper_js_globals():
 def result_with_metadata(result):
     video_ids = set()
     frame_ids = set()
-    labeler_ids = set([Labeler.objects.get(name='handlabeled-face').id])
+#     labeler_ids = set([Labeler.objects.get(name='handlabeled-face').id])
+    labeler_ids = set()
     gender_ids = set()
     for group in result['result']:
         for obj in group['elements']:
@@ -385,9 +386,9 @@ def result_with_metadata(result):
     videos = to_dict(Video.objects.filter(id__in=video_ids))
     frames = to_dict(Frame.objects.filter(id__in=frame_ids))
     labelers = to_dict(Labeler.objects.filter(id__in=labeler_ids))
-    genders = to_dict(Gender.objects.all())
-    topics = to_dict(Topic.objects.all())
-    identities = to_dict(Identity.objects.all())
+#     genders = to_dict(Gender.objects.all())
+#     topics = to_dict(Topic.objects.all())
+#     identities = to_dict(Identity.objects.all())
 
     return {
         'groups': result['result'],
@@ -397,9 +398,9 @@ def result_with_metadata(result):
             'labelers': labelers,
         },
         'categories': {
-            'genders': genders,
-            'topics': topics,
-            'identities': identities
+#             'genders': genders,
+#             'topics': topics,
+#             'identities': identities
         }
     }
 

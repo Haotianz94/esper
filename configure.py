@@ -12,7 +12,7 @@ import pathlib
 
 NGINX_PORT = '80'
 IPYTHON_PORT = '8890'
-TF_VERSION = '1.11.0'
+TF_VERSION = '1.9.0'
 
 cores = multiprocessing.cpu_count()
 
@@ -339,7 +339,7 @@ stderr_logfile_maxbytes=0""".format(process, extra_processes[process])
 
         build_args = {
             'cores': cores,
-            'tag': 'cpu' if build_device == 'cpu' else 'gpu-9.1-cudnn7',
+            'tag': 'cpu' if build_device == 'cpu' else 'gpu-9.0-cudnn7',
             'device': build_device,
             'tf_version': TF_VERSION,
             'build_tf': 'on' if args.build_tf else 'off'

@@ -33,7 +33,6 @@ class VideoTag(models.Model):
 
 class Frame(base.Frame):
     tags = models.ManyToManyField(Tag)
-    shot_boundary = models.BooleanField()
 
 
 class Labeler(base.Labeler):
@@ -50,7 +49,7 @@ class Segment(Track):
 
 
 class Shot(Track):
-    in_commercial = models.BooleanField(default=False)
+    pass
 
 
 class Pose(Labeled, base.Pose, models.Model):
