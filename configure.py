@@ -272,8 +272,10 @@ stderr_logfile_maxbytes=0""".format(process, extra_processes[process])
     else:
         scanner_config['storage'] = {'type': 'posix', 'db_path': '/app/scanner_db'}
 
-    # Frameserver
+    # Frameserver    
     config.services.frameserver.environment.append('FILESYSTEM={}'.format(base_config.storage.type))
+    if base_config.storage.type == 'local':
+        config.services.frameserver.volumes = ['./app:/host/app']
 
     # Universal environment variables
     if args.hostname is not None:

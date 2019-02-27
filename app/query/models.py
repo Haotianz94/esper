@@ -8,6 +8,7 @@ import subprocess as sp
 
 class Video(base.Video):
     time = models.DateTimeField()
+    srt_extension = base.CharField(default='')
 
     def get_stride(self):
         return int(math.ceil(self.fps) / 2)
@@ -59,9 +60,6 @@ class Pose(Labeled, base.Pose, models.Model):
 class Face(Labeled, base.BoundingBox, models.Model):
     frame = models.ForeignKey(Frame)
     shot = models.ForeignKey(Shot, null=True)
-    background = models.BooleanField(default=False)
-    is_host = models.BooleanField(default=False)
-    blurriness = models.FloatField(null=True)
     probability = models.FloatField(default=1.)
 
     class Meta:
