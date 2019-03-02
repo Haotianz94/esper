@@ -18,7 +18,7 @@ from django.db.models import F
 from django.db.models.functions import Cast
 import django.db.models as models
 from query.base_models import Track
-from query.models import Face, Labeler, Video, Frame, Segment, Tag, Object
+from query.models import Face, Labeler, Video, Frame, Segment, Tag, Object, Pose
 import django.apps
 import os
 
@@ -171,7 +171,7 @@ def qs_to_result(result: QuerySet,
     #             result = result.select_related('face')
     #     else:
     #         frame_path = 'frame'
-    elif cls is Face: 
+    elif cls is Face or cls is Object or cls is Pose: 
         frame_path = 'frame'
         result = result.select_related(frame_path)
 

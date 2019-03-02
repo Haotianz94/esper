@@ -17,7 +17,7 @@ LABELED_TAG, _ = Tag.objects.get_or_create(name='openpose:labeled')
 print("Prepare videos and frames")
 FACE_TAG, _ = Tag.objects.get_or_create(name='mtcnn:labeled')
 db = scannerpy.Database()
-videos = Video.objects.all().order_by('id')[:1]
+videos = Video.objects.filter(path__contains='CS248').order_by('id')[1:]
 frames = [[frame.number for frame in Frame.objects.filter(
     video_id=v.id, tags=FACE_TAG).order_by("number")] for v in videos]
 

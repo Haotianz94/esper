@@ -22,7 +22,7 @@ faces = st.face_detection.detect_faces(
     db,
     videos=[video.for_scannertools() for video in videos],
     frames=frames,
-    cache=False,
+    cache=True,
     run_opts={
             'io_packet_size': 300,
             'work_packet_size': 20,
