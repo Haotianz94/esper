@@ -31,7 +31,9 @@ if __name__ == "__main__":
 
     def load_hist(i):
         path = '/app/data/histogram/{:07d}.bin'.format(video_ids[i])
-        hist = np.array(list(hists[i].load()))
+        hist = np.array(list(hists[i].load()), dtype=np.int)
+        print(hist.shape)
+        print(hist)
         with open(path, 'wb') as f:
             f.write(hist.tobytes())
 

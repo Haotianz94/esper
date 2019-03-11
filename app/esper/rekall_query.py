@@ -46,18 +46,31 @@ def count_duration(intrvlcol):
     return duration
 
 
-def intrvlcol2list(intrvlcol, with_duration=True):
+def intrvlcol2list(intrvlcol, with_duration=True, sort_by_duration=False):
     interval_list = []
-    for video_id, intrvllist in intrvlcol.get_allintervals().items():
+    if type(intrvlcol) == IntervalList:
+        intrvllist = intrvlcol
         if with_duration:
             video = Video.objects.filter(id=video_id)[0]
         for i in intrvllist.get_intervals():
-            if i.start > video.num_frames:
-                continue
             if with_duration:
                 interval_list.append((video_id, i.start, i.end, (i.end - i.start) / video.fps))
             else:
                 interval_list.append((video_id, i.start, i.end))
+    else:            
+        for video_id, intrvllist in intrvlcol.get_allintervals().items():
+            video = Video.objects.filter(id=video_id)[0]
+            for i in intrvllist.get_intervals():
+                if i.start > video.num_frames:
+                    continue
+                if with_duration:
+                    interval_list.append((video_id, i.start, i.end, (i.end - i.start) / video.fps))
+                else:
+                    interval_list.append((video_id, i.start, i.end))
+    if sort_by_duration and with_duration:
+        interval_list.sort(key=lambda i: i[-1])
+        interval_list = interval_list[::-1]
+
     print("Get {} intervals from interval collection".format(len(interval_list)))
     return interval_list
 
@@ -99,13 +112,6 @@ def intrvlcol_second2frame(intrvlcol):
         intrvllists_frame[video_id] = IntervalList([(int(i.start * fps), int(i.end * fps), i.payload) \
                                                   for i in intrvllist.get_intervals()] )
     return VideoIntervalCollection(intrvllists_frame)
-
-
-def intrvllist2list(intrvllist):
-    intervals = []
-    for i in intrvllist.get_intervals():
-        intervals.append((i.start, i.end, i.payload))
-    return intervals
 
 
 def split_intrvlcol(intrvlcol, seg_length):

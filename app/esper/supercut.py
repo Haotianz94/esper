@@ -42,7 +42,26 @@ def count_syllables(phrase):
     return len(dic.inserted(phrase).replace('-', ' ').split())
 
 
-# ============== Video audio operations ==============    
+# ============== Video audio operations ==============  
+
+def create_montage(intervals, out_path=None, **kwargs):
+    videos, frames = [], []
+    id2video = {}
+    for i in intervals:
+        video_id, sfid, efid = i[:3]
+        if not video_id in id2video:
+            id2video[video_id] = Video.objects.filter(id=video_id)[0]
+    
+    for i in intervals:
+        video_id, sfid, efid = i[:3]
+        videos.append(id2video[video_id])
+        frame = (sfid + efid) / 2
+        frames.append(int(frame))
+
+    montage = make_montage(videos, frames, **kwargs)
+    if not out_path is None:
+        cv2.imwrite(out_path, montage)
+
 
 def stitch_video_temporal(intervals, out_path,
                           align_args={'align_mode': None},

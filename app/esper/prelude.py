@@ -268,3 +268,13 @@ def frange(x, y, jump):
     while x < y:
         yield x
         x += jump
+
+
+def draw_keypoints(video, frame, keypoints):
+    img = load_frame(video, frame, [])
+    H, W = img.shape[:2]
+    for kp in keypoints:
+        pt = (int(kp[0] * W), int(kp[1] * H))
+        print(pt)
+        cv2.circle(img, pt, 10, (255, 255, 255), -1)
+    imshow(img)

@@ -162,6 +162,23 @@ class Video(models.Model):
             shell=True)
         return output_path
 
+    def extract_audio(self, output_path=None, ext='wav', segment=None):
+        if output_path is None:
+            output_path = tempfile.NamedTemporaryFile(suffix='.{}'.format(ext), delete=False).name
+
+        if segment is not None:
+            (start, end) = segment
+            start_str = '-ss {}'.format(self._ffmpeg_fmt_time(start))
+            end_str = '-t {}'.format(self._ffmpeg_fmt_time(end - start))
+        else:
+            start_str = ''
+            end_str = ''
+        # ffmpeg -i video.mp4 -f mp3 -ab 192000 -vn music.mp3
+        sp.check_call(
+            'ffmpeg -y {} -i "{}" {} -f {} -vn {}'.format(start_str, self.path, end_str, ext, output_path),
+            shell=True)
+        return output_path
+
     def frame_time(self, frame):
         return frame / self.fps
 
