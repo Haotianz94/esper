@@ -2,10 +2,10 @@
 from esper.rekall_query import *
 
 # import query sets
-from query.models import FaceGender, HairColor
+# from query.models import FaceGender, HairColor
 
 # import caption search
-from esper.captions import *
+# from esper.captions import *
 
 # import esper widgets for selection
 from esper.widget import *

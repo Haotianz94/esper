@@ -31,10 +31,9 @@ def query(name):
 
     return wrapper
 
-from .all_faces import *
 from .all_videos import *
-from .panels_sql import *
-from .panels_rekall import *
-from .interview_with_person_x import *
-from .sandbox_labels import *
-from .other_queries import *
+#from .panels_sql import *
+#from .panels_rekall import *
+#from .interview_with_person_x import *
+#from .sandbox_labels import *
+#from .other_queries import *

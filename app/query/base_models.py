@@ -158,7 +158,7 @@ class Video(models.Model):
             end_str = ''
 
         sp.check_call(
-            'ffmpeg -y {} -i "{}" {} {}'.format(start_str, self.url(), end_str, output_path),
+            'ffmpeg -y {} -i "{}" {} {}'.format(start_str, self.path, end_str, output_path),
             shell=True)
         return output_path
 

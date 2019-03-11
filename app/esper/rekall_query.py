@@ -1,5 +1,5 @@
 # import query sets
-from query.models import Video, Face, FaceIdentity, Commercial
+from query.models import Video, Face#, FaceIdentity, Commercial
 from django.db.models import F, Q
 
 # import esper utils
@@ -18,7 +18,7 @@ from rekall.payload_predicates import payload_satisfies
 from rekall.list_predicates import length_exactly
 
 # import caption search
-from esper.captions import *
+# from esper.captions import *
 
 
 # ============== Basic help functions ============== 

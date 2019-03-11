@@ -17,9 +17,13 @@ LABELED_TAG, _ = Tag.objects.get_or_create(name='openpose:labeled')
 print("Prepare videos and frames")
 FACE_TAG, _ = Tag.objects.get_or_create(name='mtcnn:labeled')
 db = scannerpy.Database()
-videos = Video.objects.filter(path__contains='CS248').order_by('id')[1:]
-frames = [[frame.number for frame in Frame.objects.filter(
-    video_id=v.id, tags=FACE_TAG).order_by("number")] for v in videos]
+# videos = Video.objects.filter(path__contains='CS248').order_by('id')[1:]
+videos = Video.objects.filter(path__contains='Tabletennis').order_by('id')[5:]
+### 0,1,2,3 finished
+
+# frames = [[frame.number for frame in Frame.objects.filter(
+#     video_id=v.id, tags=FACE_TAG).order_by("number")] for v in videos]
+frames = [[i for i in range(v.num_frames)] for v in videos]
 
 
 print("Computing poses")
@@ -27,7 +31,7 @@ poses = st.pose_detection.detect_poses(
     db,
     videos=[video.for_scannertools() for video in videos],
     frames=frames,
-    cache=False,
+    cache=True,
     run_opts={
             'io_packet_size': 100,
             'work_packet_size': 20,
@@ -66,7 +70,7 @@ for video, framelist, poseframelist in tqdm(zip(videos, frames, poses), total=le
                 Frame.tags.through(frame_id=frame.pk, tag_id=LABELED_TAG.pk))
     Pose.objects.bulk_create(new_poses, batch_size=10000)
     Frame.tags.through.objects.bulk_create(new_frame_tags, batch_size=10000)
-
+print("{} pose objects created, {} frame tagged".format(len(new_poses), len(new_frame_tags)))
 
 # print("Tagging all the frames as being labeled")
 # for video, framelist in tqdm(zip(videos, frames), total=len(videos)):
