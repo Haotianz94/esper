@@ -14,6 +14,11 @@ _EMB_DATA = EmbeddingData(ID_PATH, EMB_PATH, EMB_DIM)
 def count():
     return _EMB_DATA.count()
 
+  
+def ids(i, n):
+    """Get n face ids starting at index i"""
+    return _EMB_DATA.ids(i, n)
+
 
 def get(ids):
     """List of face ids -> List of pairs (id, embedding)"""
@@ -121,6 +126,6 @@ def logreg_predict(weights, **kwargs):
     return _EMB_DATA.logreg_predict(weights, **kwargs)
 
 
-def knn_predict(ids, labels, k, **kwargs):
+def knn_predict(train_ids, train_labels, k, **kwargs):
     """Returns: List of (face_id, score) pairs by ascending score)"""
-    return _EMB_DATA.knn_predict(ids, labels, k, **kwargs)
+    return _EMB_DATA.knn_predict(train_ids, train_labels, k, **kwargs)

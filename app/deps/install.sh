@@ -12,11 +12,16 @@ pushd .
 # Rekall
 cd $DEPS_DIR
 echo "Installing Rekall"
-cd rekall
+cd rekall/rekallpy
 pip3 install --upgrade --force-reinstall --user -e .
 if [ $RUN_TESTS == 1 ]; then
         python3 setup.py test
 fi
+cd $DEPS_DIR
+cd rekall/rekalljs
+npm install
+npm run build
+npm link
 
 # Model server
 cd $DEPS_DIR
@@ -55,16 +60,16 @@ cd $DEPS_DIR
 echo "Installing vgrid"
 cd vgrid
 npm install
-npm link
+npm link @wcrichto/rekall
 npm run build
+npm link
 
 cd $DEPS_DIR
 echo "Installing vgrid_jupyter"
-cd vgrid_jupyter/js
-npm link vgrid
+cd vgrid_jupyter
 npm install
+npm link @wcrichto/vgrid
 npm run build
-cd ..
 pip3 install --upgrade --force-reinstall --user -e .
 
 jupyter nbextension enable --py --user widgetsnbextension
