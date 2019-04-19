@@ -9,4 +9,4 @@ user = "haotian"        # Username
 password = "lecture"  # Password
 
 [compute]
-gpu = false          # Whether or not you have a GPU on the local machine
+gpu = true          # Whether or not you have a GPU on the local machine
