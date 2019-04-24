@@ -1,4 +1,4 @@
-from esper.utils import *
+from esper.table_tennis.utils import *
 import cv2
 import random
 import pickle
