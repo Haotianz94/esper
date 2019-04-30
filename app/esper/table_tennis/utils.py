@@ -48,7 +48,7 @@ def create_montage_from_images(imgs,
         return montage
 
 
-def create_montage_from_intervals(intervals, out_path=None, **kwargs):
+def create_montage_from_intervals(intervals, output_path=None, **kwargs):
     videos, frames = [], []
     id2video = {}
     for i in intervals:

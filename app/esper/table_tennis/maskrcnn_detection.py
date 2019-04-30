@@ -19,7 +19,7 @@ def main():
 	# movie_path = '/app/data/videos/sample-clip.mp4'
 	# movie_name = os.path.splitext(os.path.basename(movie_path))[0]
 	print("Prepare videos and frames")
-	video = Video.objects.filter(path__contains='Tabletennis').order_by('id')[0]
+	video = Video.objects.filter(path__contains='men_single_final_gold')[0]
 	movie_path = video.path
 	movie_name = os.path.splitext(os.path.basename(movie_path))[0]
 
@@ -41,6 +41,8 @@ def main():
 	segmentation_stream = NamedStream(sc, movie_name + '_segment')
 	output_op = sc.io.Output(object_frame, [segmentation_stream])
 	sc.run(output_op, scannerpy.common.PerfParams.estimate(), cache_mode=scannerpy.CacheMode.Overwrite)
+
+	print('Running Scanner for MaskRCNN op done')
 
 	exit()
 
