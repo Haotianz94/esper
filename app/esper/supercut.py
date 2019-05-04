@@ -66,7 +66,8 @@ def create_montage(intervals, out_path=None, **kwargs):
 def stitch_video_temporal(intervals, out_path,
                           align_args={'align_mode': None},
                           dilation_args={'dilation': None}, 
-                          speed=None):
+                          speed=None,
+                          im_size=(640, 480)):
     """
     stitch video clips sequentially
     
@@ -127,7 +128,7 @@ def stitch_video_temporal(intervals, out_path,
     
     # concat phrase clips
     if len(intervals) > 1:
-        lyric_path = concat_videos(clip_paths)
+        lyric_path = concat_videos(clip_paths, im_size=im_size)
     else:
         lyric_path = clip_paths[0]
         
@@ -140,7 +141,7 @@ def stitch_video_temporal(intervals, out_path,
     
     # concat the dilation clip
     if not dilation is None:
-        concat_videos([lyric_path, break_path], out_path)
+        concat_videos([lyric_path, break_path], out_path, im_size=im_size)
     else:
         shutil.move(lyric_path, out_path)
 

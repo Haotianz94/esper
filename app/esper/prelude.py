@@ -214,13 +214,13 @@ def make_montage_video(videos, start, end, output_path, **kwargs):
     vid.release()
 
 
-def concat_videos(paths, output_path=None):
+def concat_videos(paths, output_path=None, im_size=(640, 480)):
     if output_path is None:
         output_path = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False).name
 
     transform = ';'.join([
-        '[{i}:v]scale=640:480:force_original_aspect_ratio=decrease,pad=640:480:(ow-iw)/2:(oh-ih)/2[v{i}]'
-        .format(i=i) for i in range(len(paths))
+        '[{i}:v]scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2[v{i}]'
+        .format(i=i, w=im_size[0], h=im_size[1]) for i in range(len(paths))
     ])
     filter = ''.join(['[v{i}][{i}:a:0]'.format(i=i) for i in range(len(paths))])
     inputs = ' '.join(['-i {}'.format(p) for p in paths])
