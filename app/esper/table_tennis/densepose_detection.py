@@ -32,7 +32,7 @@ def main():
 	print('Running Scanner DensePose op')
 	densepose_frame = sc.ops.DensePoseDetectPerson(
 	    frame=strided_frame,
-	    device=DeviceType.GPU, #if sc.has_gpu() else DeviceType.CPU,
+	    device=DeviceType.GPU,
 	    batch=1,
 	    )
 	densepose_stream = NamedStream(sc, movie_name + '_densepose')

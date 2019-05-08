@@ -1,3 +1,10 @@
+import scannerpy
+from scannerpy import Client, DeviceType
+from scannerpy.storage import NamedVideoStream, NamedStream
+from scannertools import maskrcnn_detection
+from query.models import Video, Frame, Face, Labeler, Tag, VideoTag, Shot
+from esper.prelude import Notifier
+
 import os
 import sys
 import math
@@ -5,13 +12,6 @@ import numpy as np
 from tqdm import tqdm
 import six.moves.urllib as urllib
 from django.db.models import Q
-
-import scannerpy
-from scannerpy import Client, DeviceType
-from scannerpy.storage import NamedVideoStream, NamedStream
-from scannertools import maskrcnn_detection
-from query.models import Video, Frame, Face, Labeler, Tag, VideoTag, Shot
-from esper.prelude import Notifier
 
 
 def main():
