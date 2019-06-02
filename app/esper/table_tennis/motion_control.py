@@ -1,3 +1,21 @@
+import numpy as np
+
+def L2(pt1, pt2):
+    return np.sqrt((pt1[0] - pt2[0]) ** 2 + (pt1[1] - pt2[1]) ** 2)
+
+
+def median(pt1, pt2):
+    return ((pt1[0] + pt2[0]) // 2, (pt1[1] + pt2[1]) // 2)
+
+
+def add(pt1, pt2):
+    return (pt1[0] + pt2[0], pt1[1] + pt2[1])
+
+
+def minus(pt1, pt2):
+    return (pt1[0] - pt2[0], pt1[1] - pt2[1])
+
+
 def group_motion(interval, fid2openpose, step_size=5, fps=25):
     _, sfid, efid, _ = interval
     x_list = [fid2openpose_A[fid]._format_keypoints()[Pose.Neck, 0] for fid in range(sfid, efid) if fid in fid2openpose]
@@ -59,3 +77,22 @@ def group_motion(interval, fid2openpose, step_size=5, fps=25):
                      'still': merge_overlap_seg(motion_dict['still'])}
 
     return motion_dict_filter
+
+
+def interpolate_trajectory_from_hit(hit_traj):
+    ball_traj = []
+    start = hit_traj[0]
+    i = 1
+    while i != len(hit_traj):
+        end = hit_traj[i]
+        nframe = end['fid'] - start['fid']
+        step_x = 1. * (end['pos'][0] - start['pos'][0]) / nframe
+        step_y = 1. * (end['pos'][1] - start['pos'][1]) / nframe 
+        for idx in range(nframe):
+            ball_traj.append({'fid' : start['fid']+idx, 
+                              'pos': (int(np.round(start['pos'][0] + step_x * idx)), 
+                              int(np.round(start['pos'][1] + step_y * idx)))})
+        i += 1
+        start = end
+    ball_traj.append({'fid' : start['fid'], 'pos': start['pos']})
+    return ball_traj

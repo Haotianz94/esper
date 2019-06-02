@@ -1,22 +1,20 @@
+from django.db.models import F, Q
+from operator import itemgetter, attrgetter
+
 # import query sets
 from query.models import Video, Face, Pose
-from django.db.models import F, Q
 
 # import esper utils
 from esper.prelude import *
+# from esper.supercut import *
 
-# import rekall
-from esper.rekall import *
-from rekall.interval_list import Interval, IntervalList
-from rekall.video_interval_collection import VideoIntervalCollection
-from rekall.temporal_predicates import *
-from rekall.spatial_predicates import *
-from rekall.logical_predicates import *
-from rekall.parsers import in_array, bbox_payload_parser
-from rekall.merge_ops import payload_plus
-from rekall.payload_predicates import payload_satisfies
-from rekall.list_predicates import length_exactly
+from rekall.stdlib.merge_ops import payload_plus
+from rekall.predicates import payload_satisfies, length_exactly
+from rekall.bounds import Bounds1D, Bounds3D
 
+from rekall import Interval, IntervalSet, IntervalSetMapping
+from vgrid import VGridSpec, VideoMetadata, VideoBlockFormat, LabelState
+from vgrid_jupyter import VGridWidget
 
 # ============== Visualization help functions ============== 
 
@@ -67,94 +65,110 @@ def create_montage_from_intervals(intervals, output_path=None, **kwargs):
         cv2.imwrite(out_path, montage)
 
 
+def create_video_supercut(intervals, out_path):
+    stitch_video_temporal(intervals, out_path)
+
+
+def create_video_montage(intervals, out_path, width=1920, num_cols=10, aspect_ratio=16./9, align=False, decrease_volume=10):
+    video_path = '/app/result/pose_montage.avi'
+    audio_path = '/app/result/pose_montage.wav'
+    stitch_video_spatial(intervals, out_path=video_path, align=align, 
+                     width=width, num_cols=num_cols, target_height = int(1. * width / num_cols / aspect_ratio))
+    mix_audio(intervals_selected, out_path=audio_path, decrease_volume=decrease_volume, align=align)
+    concat_video_audio(video_path, audio_path, out_path)
+
+
 # ============== Rekall help functions ============== 
 
-def count_intervals(intrvlcol):
-    num_intrvl = 0
-    for intrvllist in intrvlcol.get_allintervals().values():
-        num_intrvl += intrvllist.size()
-    return num_intrvl
+def count_intervals(ism):
+    return sum([intervalSet.size() for intervalSet in ism.get_grouped_intervals().values() ])
 
 
-def count_duration(intrvlcol):
-    if type(intrvlcol) == IntervalList:
-        intrvllist = intrvlcol
-        if intrvllist.size() > 0:
-            duration = sum([i.end - i.start for i in intrvllist.get_intervals()])
-        else:
-            duration = 0
+def count_duration(ism):
+    return sum([intervalSet.duration() for intervalSet in ism.get_grouped_intervals().values() ])
+
+
+def list_to_IntervalSetMapping(interval_list):
+    ism = {}
+    for video_id, start, end, duration in interval_list:
+        if not video_id in ism:
+            ism[video_id] = []
+        ism[video_id].append(Interval(Bounds3D(start, end)))
+    return IntervalSetMapping({video_id: IntervalSet(intervalSet) for video_id, intervalSet in ism.items()}) 
+
+
+# def intrvlcol2list(intrvlcol, with_duration=True, sort_by_duration=False):
+#     interval_list = []
+#     if type(intrvlcol) == IntervalList:
+#         intrvllist = intrvlcol
+#         if with_duration:
+#             video = Video.objects.filter(id=video_id)[0]
+#         for i in intrvllist.get_intervals():
+#             if with_duration:
+#                 interval_list.append((video_id, i.start, i.end, (i.end - i.start) / video.fps))
+#             else:
+#                 interval_list.append((video_id, i.start, i.end))
+#     else:            
+#         for video_id, intrvllist in intrvlcol.get_allintervals().items():
+#             video = Video.objects.filter(id=video_id)[0]
+#             for i in intrvllist.get_intervals():
+#                 if i.start > video.num_frames:
+#                     continue
+#                 if with_duration:
+#                     interval_list.append((video_id, i.start, i.end, (i.end - i.start) / video.fps))
+#                 else:
+#                     interval_list.append((video_id, i.start, i.end))
+#     if sort_by_duration and with_duration:
+#         interval_list.sort(key=lambda i: i[-1])
+#         interval_list = interval_list[::-1]
+
+#     print("Get {} intervals from interval collection".format(len(interval_list)))
+#     return interval_list
+
+
+def IntervalSetMapping_to_vgrid(ism, flat=False):
+    video_meta = []
+    if flat:
+        video_meta_id = 0
+        ism_final = {}
+        for video_id, intervalSet in ism.items():
+            video = Video.objects.filter(id=video_id)[0] 
+            for i in intervalSet.get_intervals():
+                ism_final[video_meta_id] = IntervalSet([i])
+                video_meta.append(VideoMetadata(path=video.path, id=video_meta_id))
+                video_meta_id += 1
     else:
-        if count_intervals(intrvlcol) > 0:
-            duration = sum([i.end - i.start for _, intrvllist in intrvlcol.get_allintervals().items() \
-                            for i in intrvllist.get_intervals() ])
-        else:
-            duration = 0
-    return duration
+        for video_id, intervalSet in ism.items():
+            video = Video.objects.filter(id=video_id)[0] 
+            video_meta.append(VideoMetadata(path=video.path, id=video_id))
+        ism_final = ism
+
+    vgrid_spec = VGridSpec(
+      video_meta=video_meta,
+      video_endpoint="http://sora.stanford.edu/system_media/",
+      vis_format=VideoBlockFormat([('test', ism_final)]),
+      show_timeline=True)
+
+    return VGridWidget(vgrid_spec=vgrid_spec.to_json())
 
 
-def intrvlcol2list(intrvlcol, with_duration=True, sort_by_duration=False):
-    interval_list = []
-    if type(intrvlcol) == IntervalList:
-        intrvllist = intrvlcol
-        if with_duration:
-            video = Video.objects.filter(id=video_id)[0]
-        for i in intrvllist.get_intervals():
-            if with_duration:
-                interval_list.append((video_id, i.start, i.end, (i.end - i.start) / video.fps))
-            else:
-                interval_list.append((video_id, i.start, i.end))
-    else:            
-        for video_id, intrvllist in intrvlcol.get_allintervals().items():
-            video = Video.objects.filter(id=video_id)[0]
-            for i in intrvllist.get_intervals():
-                if i.start > video.num_frames:
-                    continue
-                if with_duration:
-                    interval_list.append((video_id, i.start, i.end, (i.end - i.start) / video.fps))
-                else:
-                    interval_list.append((video_id, i.start, i.end))
-    if sort_by_duration and with_duration:
-        interval_list.sort(key=lambda i: i[-1])
-        interval_list = interval_list[::-1]
-
-    print("Get {} intervals from interval collection".format(len(interval_list)))
-    return interval_list
-
-
-def intrvlcol2result(intrvlcol, flat=False):
-    if not flat:
-        return intrvllists_to_result(intrvlcol.get_allintervals())
-    else:
-        return interval2result(intrvlcol2list(intrvlcol))
-    
-
-def interval2result(intervals):
-    materialized_result = [
-        {'video': video_id,
-#             'track': t.id,
-         'min_frame': sfid,
-         'max_frame': efid }
-        for video_id, sfid, efid, duration in intervals ]
-    count = len(intervals)
-    groups = [{'type': 'flat', 'label': '', 'elements': [r]} for r in materialized_result]
-    return {'result': groups, 'count': count, 'type': 'Video'}
-
-
-def intrvlcol_frame2second(intrvlcol):
-    intrvllists_second = {}
-    for video_id, intrvllist in intrvlcol.get_allintervals().items():
+def IntervalSetMapping_frame_to_second(ism):
+    intervalSets_second = {}
+    for video_id, intervalSet in ism.get_grouped_intervals().items():
         video = Video.objects.filter(id=video_id)[0]
         fps = video.fps
-        intrvllists_second[video_id] = IntervalList([(i.start / fps, i.end / fps, i.payload) \
-                                                  for i in intrvllist.get_intervals()] )
-    return VideoIntervalCollection(intrvllists_second)
+        intervalSets_second[video_id] = IntervalSet( 
+            [Interval(Bounds1D(i.bounds['t1'] / fps, i.bounds['t2'] / fps), i.payload) \
+            for i in intervalSet.get_intervals()] )
+    return IntervalSetMapping(intervalSets_second)
 
 
-def intrvlcol_second2frame(intrvlcol):
-    intrvllists_frame = {}
-    for video_id, intrvllist in intrvlcol.get_allintervals().items():
+def IntervalSetMapping_second_to_frame(ism):
+    intervalSets_frame = {}
+    for video_id, intervalSet in ism.get_grouped_intervals().items():
         video = Video.objects.filter(id=video_id)[0]
         fps = video.fps
-        intrvllists_frame[video_id] = IntervalList([(int(i.start * fps), int(i.end * fps), i.payload) \
-                                                  for i in intrvllist.get_intervals()] )
-    return VideoIntervalCollection(intrvllists_frame)
+        intervalSets_frame[video_id] = IntervalSet(
+            [Interval(Bounds1D(int(i.bounds['t1'] * fps), int(i.bounds['t2'] * fps)), i.payload) \
+            for i in intervalSet.get_intervals()] )
+    return IntervalSetMapping(intervalSets_frame)

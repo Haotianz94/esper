@@ -1,3 +1,7 @@
+from scannerpy import Client, DeviceType
+from scannerpy.storage import NamedVideoStream, NamedStream
+from scannertools import maskrcnn_detection
+from query.models import Video
 from esper.table_tennis.utils import *
 import cv2
 import random
@@ -221,3 +225,97 @@ def visualize_densepose_stick(img, keyps, color):
     # draw_stick(keyps[:2, 0], keyps[:2, Pose.RHip])
     draw_stick(keyps[:2, 12], keyps[:2, 14])
     draw_stick(keyps[:2, 14], keyps[:2, 16])
+
+
+def get_openpose_by_fid(video_id, fid):
+    pose_list = list(Pose.objects.filter(frame__video_id=video_id, frame__number=fid))
+    if len(pose_list) < 2:
+        print(fid, len(pose_list))
+        return None, None
+    # filter two player
+    neck_shoulder_dist = []
+    for pose in pose_list:
+        kp = pose._format_keypoints()
+        if tuple(kp[Pose.Neck, :2]) == (0, 0) or tuple(kp[Pose.LShoulder, :2]) == (0, 0) or tuple(kp[Pose.RShoulder, :2]) == (0, 0):
+            neck_shoulder_dist += [-1]
+        else:
+            neck_shoulder_dist += [(np.linalg.norm(kp[Pose.Neck, :2] - kp[Pose.LShoulder, :2]) + 
+                np.linalg.norm(kp[Pose.Neck, :2] - kp[Pose.RShoulder, :2])) / 2]
+    top2 = np.argsort(neck_shoulder_dist)[-2:]
+    poseA, poseB = pose_list[top2[0]], pose_list[top2[1]]
+    poseA_neck = poseA._format_keypoints()[Pose.Neck]
+    poseB_neck = poseB._format_keypoints()[Pose.Neck]
+    if poseA_neck[1] >= poseB_neck[1]:
+        pose_fg = poseA 
+        pose_bg = poseB 
+    else:
+        pose_fg = poseB 
+        pose_bg = poseA 
+    return pose_fg, pose_bg
+
+
+def get_densepose_by_fid(video_id, fid):
+
+    video = Video.objects.filter(id=video_id)[0]
+    movie_path = video.path
+    movie_name = os.path.splitext(os.path.basename(movie_path))[0]
+    sc = Client()
+    densepose_stream = NamedStream(sc, movie_name + '_densepose')
+    seq = sc.sequence(densepose_stream._name)
+    obj = seq.load(workers=1, rows=[fid])
+    densepose = next(obj)
+
+    if len(densepose['bbox']) < 2:
+        print(fid, len(densepose['bbox']))
+        return None, None
+    print(densepose['segms'].shape)
+    # filter two player
+    neck_shoulder_dist = []
+    for pose in densepose['keyp']:
+        if tuple(pose[:2, 5]) == (0, 0) or tuple(pose[:2, 6]) == (0, 0):
+            neck_shoulder_dist += [-1]
+        else:
+            neck_shoulder_dist += [np.linalg.norm(pose[:2, 5] - pose[:2, 6])] 
+
+    top2 = np.argsort(neck_shoulder_dist)[-2:]
+    poseA, poseB = densepose['keyp'][top2[0]], densepose['keyp'][top2[1]]
+    # poseA_neck = poseA[:2, 5]
+    # poseB_neck = poseB[:2, 5]
+    if poseA[1, 5] >= poseB[1, 5]:
+        pose_fg = poseA 
+        pose_bg = poseB 
+    else:
+        pose_fg = poseB 
+        pose_bg = poseA 
+    return pose_fg, pose_bg
+
+
+def get_maskrcnn_by_fid(sc, video_id, fid):
+
+    video = Video.objects.filter(id=video_id)[0]
+    maskrcnn_stream = NamedStream(sc, video.item_name() + '_maskrcnn')
+    seq = sc.sequence(maskrcnn_stream._name)
+    obj = seq.load(workers=1, rows=[fid])
+    metadata = next(obj)
+
+    if len(metadata) < 2:
+        print(fid, len(metadata))
+        return None, None
+    PERSON_CATEGORY = maskrcnn_detection.CATEGORIES.index('person')
+    # filter two player
+    bbox_size_list = []
+    for m in metadata:
+        if int(m['label']) == PERSON_CATEGORY and m['score'] > 0.9:
+            bbox_size_list += [m['bbox']['x2'] - m['bbox']['x1']]
+        else:
+            bbox_size_list += [0]
+
+    top2 = np.argsort(bbox_size_list)[-2:]
+    playerA, playerB = metadata[top2[0]], metadata[top2[1]]
+    if playerA['bbox']['y1'] > playerB['bbox']['y1']:
+        mask_fg = playerA['mask'] 
+        mask_bg = playerB['mask'] 
+    else:
+        mask_fg = playerB['mask'] 
+        mask_bg = playerA['mask'] 
+    return mask_fg, mask_bg
