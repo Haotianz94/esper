@@ -1,4 +1,13 @@
+from esper.table_tennis.utils import *
+from esper.table_tennis.motion_control import *
+from esper.table_tennis.pose_utils import * 
+
+import pycocotools.mask as mask_util
+
 import numpy as np
+import cv2
+import pickle
+
 
 def L2(pt1, pt2):
     return np.sqrt((pt1[0] - pt2[0]) ** 2 + (pt1[1] - pt2[1]) ** 2)
@@ -96,3 +105,77 @@ def interpolate_trajectory_from_hit(hit_traj):
         start = end
     ball_traj.append({'fid' : start['fid'], 'pos': start['pos']})
     return ball_traj
+
+
+def generate_motion_with_hit_label(sc, video, motion_dict, hit_traj, out_path):
+    # hacky start
+    background = load_frame(video, 39050, [])
+    video_name = video.item_name()
+    # hacky end
+
+    videowriter = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc('M','J','P','G'), 8, (video.width, video.height))
+    i = 0
+    ball_traj = interpolate_trajectory_from_hit(hit_traj) # maybe better input just a start and end
+    while i+2 < len(hit_traj):
+        hit_start = hit_traj[i]
+        if not hit_start['fg']:
+            i += 1
+            continue
+        
+        hit_med = hit_traj[i + 1]
+        hit_end = hit_traj[i + 2]
+        nframe = hit_end['fid'] - hit_start['fid']
+        best_dist = float('inf')
+        best_match = None
+        for motion_traj in motion_dict:
+            for j, motion_start in enumerate(motion_traj):
+                if not motion_start['fg']:
+                    continue
+                if j + 2 >= len(motion_traj):
+                    break
+                motion_med = motion_traj[j + 1]
+                motion_end = motion_traj[j + 2]
+                if motion_start['pos'] is None or motion_med['pos'] is None or motion_end['pos'] is None:
+                    continue
+                
+                shift = (hit_start['pos'][0] - motion_start['pos'][0], 0)
+                d = L2(hit_start['pos'], add(motion_start['pos'], shift)) \
+                    + L2(hit_med['pos'], add(motion_med['pos'], shift)) \
+                    + L2(hit_end['pos'], add(motion_end['pos'], shift))
+                if d < best_dist:
+                        best_dist = d
+                        best_match = {'start':motion_start, 'end':motion_end, 'shift':shift}
+        i += 2
+        print("best_match_distance", best_dist)
+        print("num frames of query", nframe)
+        print("num frames of result", best_match['end']['fid'] - best_match['start']['fid'])
+        
+        # for interpolation
+        time_step = 1. * (best_match['end']['fid'] - best_match['start']['fid']) / nframe
+        space_step = 1. * (hit_end['pos'][0] - best_match['end']['pos'][0] - best_match['shift'][0]) / nframe
+        
+        offset = hit_start['fid'] - hit_traj[0]['fid']
+        for idx in range(nframe + 1):
+            target_frame = background.copy()
+            
+            # interpolate motion to match hit
+            source_fid = best_match['start']['fid'] + int(np.round(idx * time_step))
+            source_frame = load_frame(video, source_fid, []) 
+
+            # load mask from maskrcnn database
+            mask_fg, mask_bg = get_maskrcnn_by_fid(sc, video_name, source_fid)
+            source_mask = mask_util.decode(mask_fg)
+
+            # load player mask with shift
+            shift = add(best_match['shift'], (int(idx * space_step), 0))
+            source_frame = np.roll(source_frame, shift, axis=(1, 0))
+            source_mask = np.roll(source_mask, shift, axis=(1, 0))
+            
+            # stitch player to background
+            target_frame[source_mask == 1] = source_frame[source_mask == 1]
+            
+            cv2.circle(target_frame, ball_traj[offset+idx]['pos'], 12, (255, 255, 255), -1)
+            if idx == 0 or idx == nframe:
+                cv2.circle(target_frame, ball_traj[offset+idx]['pos'], 12, (0, 0, 255), -1)
+            videowriter.write(target_frame)
+    videowriter.release()

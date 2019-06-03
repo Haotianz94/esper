@@ -3,6 +3,7 @@ from scannerpy.storage import NamedVideoStream, NamedStream
 from scannertools import maskrcnn_detection
 from query.models import Video
 from esper.table_tennis.utils import *
+
 import cv2
 import random
 import pickle
@@ -254,13 +255,8 @@ def get_openpose_by_fid(video_id, fid):
     return pose_fg, pose_bg
 
 
-def get_densepose_by_fid(video_id, fid):
-
-    video = Video.objects.filter(id=video_id)[0]
-    movie_path = video.path
-    movie_name = os.path.splitext(os.path.basename(movie_path))[0]
-    sc = Client()
-    densepose_stream = NamedStream(sc, movie_name + '_densepose')
+def get_densepose_by_fid(sc, video_name, fid):
+    densepose_stream = NamedStream(sc, video_name + '_densepose')
     seq = sc.sequence(densepose_stream._name)
     obj = seq.load(workers=1, rows=[fid])
     densepose = next(obj)
@@ -290,10 +286,8 @@ def get_densepose_by_fid(video_id, fid):
     return pose_fg, pose_bg
 
 
-def get_maskrcnn_by_fid(sc, video_id, fid):
-
-    video = Video.objects.filter(id=video_id)[0]
-    maskrcnn_stream = NamedStream(sc, video.item_name() + '_maskrcnn')
+def get_maskrcnn_by_fid(sc, video_name, fid):
+    maskrcnn_stream = NamedStream(sc, video_name + '_maskrcnn')
     seq = sc.sequence(maskrcnn_stream._name)
     obj = seq.load(workers=1, rows=[fid])
     metadata = next(obj)
