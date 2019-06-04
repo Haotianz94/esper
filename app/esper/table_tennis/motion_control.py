@@ -44,7 +44,6 @@ def interpolate_trajectory_from_hit(hit_traj):
     return ball_traj
 
 
-
 #########################################################################
 ##### Generate motion from simple left/right control
 #########################################################################
@@ -188,16 +187,57 @@ def generate_motion_without_hitlabel(sc, video, fid2densepose, motion_dict, hit_
 ##### Generate motion with hit label
 #########################################################################
 
+def render_motion(sc, video, query2result, out_path):
+    # hacky start
+    background = load_frame(video, 39050, [])
+    video_name = video.item_name()
+    # hacky end
+    videowriter = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc('M','J','P','G'), 8, (video.width, video.height))
+
+    for entry in query2result:
+        hit_start, hit_med, hit_end = entry['query']
+        motion_start, motion_end = entry['result']
+        shift_start = entry['shift']
+
+        nframe = hit_end['fid'] - hit_start['fid']
+        ball_traj = interpolate_trajectory_from_hit(list(entry['query']))
+        # for interpolation
+        time_step = 1. * (motion_end['fid'] - motion_start['fid']) / nframe
+        shift_step = 1. * (hit_end['pos'][0] - motion_end['pos'][0] - shift_start[0]) / nframe
+        
+        for idx in range(nframe + 1):
+            target_frame = background.copy()
+            
+            # interpolate motion to match hit
+            source_fid = motion_start['fid'] + int(np.round(idx * time_step))
+            source_frame = load_frame(video, source_fid, []) 
+
+            # load mask from maskrcnn database
+            mask_fg, mask_bg = get_maskrcnn_by_fid(sc, video_name, source_fid)
+            source_mask = mask_util.decode(mask_fg)
+
+            # load player mask with shift
+            shift = add(shift_start, (int(idx * shift_step), 0))
+            source_frame = np.roll(source_frame, shift, axis=(1, 0))
+            source_mask = np.roll(source_mask, shift, axis=(1, 0))
+            
+            # stitch player to background
+            target_frame[source_mask == 1] = source_frame[source_mask == 1]
+            
+            # draw ball
+            cv2.circle(target_frame, ball_traj[idx]['pos'], 12, (255, 255, 255), -1)
+            if idx == 0 or idx == nframe:
+                cv2.circle(target_frame, ball_traj[idx]['pos'], 12, (0, 0, 255), -1)
+            
+            videowriter.write(target_frame)
+    videowriter.release()
+
+
 def generate_motion_local(sc, video, motion_dict, hit_traj, out_path):
-    '''generate motion by looking up each triple on the query trajectory'''
-    # hacky start
-    background = load_frame(video, 39050, [])
-    video_name = video.item_name()
-    # hacky end
+    '''generate motion by looking up single triangle in hit trajectory'''
 
-    videowriter = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc('M','J','P','G'), 8, (video.width, video.height))
+    query2result = []
     i = 0
-    ball_traj = interpolate_trajectory_from_hit(hit_traj) # maybe better input just a start and end
     while i+2 < len(hit_traj):
         hit_start = hit_traj[i]
         if not hit_start['fg']:
@@ -227,52 +267,22 @@ def generate_motion_local(sc, video, motion_dict, hit_traj, out_path):
                 if d < best_dist:
                         best_dist = d
                         best_match = {'start':motion_start, 'end':motion_end, 'shift':shift}
-        i += 2
+        query2result += [{'query': (hit_start, hit_med, hit_end), 
+                          'result': (best_match['start'], best_match['end']),
+                          'shift': best_match['shift']}]
         print("best_match_distance", best_dist)
         print("num frames of query", nframe)
         print("num frames of result", best_match['end']['fid'] - best_match['start']['fid'])
-        
-        # for interpolation
-        time_step = 1. * (best_match['end']['fid'] - best_match['start']['fid']) / nframe
-        space_step = 1. * (hit_end['pos'][0] - best_match['end']['pos'][0] - best_match['shift'][0]) / nframe
-        
-        offset = hit_start['fid'] - hit_traj[0]['fid']
-        for idx in range(nframe + 1):
-            target_frame = background.copy()
-            
-            # interpolate motion to match hit
-            source_fid = best_match['start']['fid'] + int(np.round(idx * time_step))
-            source_frame = load_frame(video, source_fid, []) 
+        i += 2
 
-            # load mask from maskrcnn database
-            mask_fg, mask_bg = get_maskrcnn_by_fid(sc, video_name, source_fid)
-            source_mask = mask_util.decode(mask_fg)
-
-            # load player mask with shift
-            shift = add(best_match['shift'], (int(idx * space_step), 0))
-            source_frame = np.roll(source_frame, shift, axis=(1, 0))
-            source_mask = np.roll(source_mask, shift, axis=(1, 0))
-            
-            # stitch player to background
-            target_frame[source_mask == 1] = source_frame[source_mask == 1]
-            
-            cv2.circle(target_frame, ball_traj[offset+idx]['pos'], 12, (255, 255, 255), -1)
-            if idx == 0 or idx == nframe:
-                cv2.circle(target_frame, ball_traj[offset+idx]['pos'], 12, (0, 0, 255), -1)
-            videowriter.write(target_frame)
-    videowriter.release()
+    render_motion(sc, video, query2result, out_path)
 
 
-def generate_motion_with_hit_label(sc, video, motion_dict, hit_traj, out_path):
+def generate_motion_global(sc, video, motion_dict, hit_traj, out_path):
     '''generate motion by looking up whole query'''
-    # hacky start
-    background = load_frame(video, 39050, [])
-    video_name = video.item_name()
-    # hacky end
 
-    videowriter = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc('M','J','P','G'), 8, (video.width, video.height))
+    query2result = []
     i = 0
-    ball_traj = interpolate_trajectory_from_hit(hit_traj) # maybe better input just a start and end
     while i+2 < len(hit_traj):
         hit_start = hit_traj[i]
         if not hit_start['fg']:
@@ -302,37 +312,12 @@ def generate_motion_with_hit_label(sc, video, motion_dict, hit_traj, out_path):
                 if d < best_dist:
                         best_dist = d
                         best_match = {'start':motion_start, 'end':motion_end, 'shift':shift}
-        i += 2
+        query2result += [{'query': (hit_start, hit_med, hit_end), 
+                          'result': (best_match['start'], best_match['end']),
+                          'shift': best_match['shift']}]
         print("best_match_distance", best_dist)
         print("num frames of query", nframe)
         print("num frames of result", best_match['end']['fid'] - best_match['start']['fid'])
-        
-        # for interpolation
-        time_step = 1. * (best_match['end']['fid'] - best_match['start']['fid']) / nframe
-        space_step = 1. * (hit_end['pos'][0] - best_match['end']['pos'][0] - best_match['shift'][0]) / nframe
-        
-        offset = hit_start['fid'] - hit_traj[0]['fid']
-        for idx in range(nframe + 1):
-            target_frame = background.copy()
-            
-            # interpolate motion to match hit
-            source_fid = best_match['start']['fid'] + int(np.round(idx * time_step))
-            source_frame = load_frame(video, source_fid, []) 
+        i += 2
 
-            # load mask from maskrcnn database
-            mask_fg, mask_bg = get_maskrcnn_by_fid(sc, video_name, source_fid)
-            source_mask = mask_util.decode(mask_fg)
-
-            # load player mask with shift
-            shift = add(best_match['shift'], (int(idx * space_step), 0))
-            source_frame = np.roll(source_frame, shift, axis=(1, 0))
-            source_mask = np.roll(source_mask, shift, axis=(1, 0))
-            
-            # stitch player to background
-            target_frame[source_mask == 1] = source_frame[source_mask == 1]
-            
-            cv2.circle(target_frame, ball_traj[offset+idx]['pos'], 12, (255, 255, 255), -1)
-            if idx == 0 or idx == nframe:
-                cv2.circle(target_frame, ball_traj[offset+idx]['pos'], 12, (0, 0, 255), -1)
-            videowriter.write(target_frame)
-    videowriter.release()
+    render_motion(sc, video, query2result, out_path)    
