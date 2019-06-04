@@ -196,7 +196,7 @@ def render_motion(sc, video, query2result, out_path):
 
     for entry in query2result:
         hit_start, hit_med, hit_end = entry['query']
-        motion_start, motion_end = entry['result']
+        motion_start, motion_med, motion_end = entry['result']
         shift_start = entry['shift']
 
         nframe = hit_end['fid'] - hit_start['fid']
@@ -236,6 +236,14 @@ def render_motion(sc, video, query2result, out_path):
 def generate_motion_local(sc, video, motion_dict, hit_traj, out_path):
     '''generate motion by looking up single triangle in hit trajectory'''
 
+    def evaluate(query, result, shift):
+        (hit_start, hit_med, hit_end) = query
+        (motion_start, motion_med, motion_end) = result
+        d = L2(hit_start['pos'], add(motion_start['pos'], shift)) \
+                    + L2(hit_med['pos'], add(motion_med['pos'], shift)) \
+                    + L2(hit_end['pos'], add(motion_end['pos'], shift))
+        return d
+
     query2result = []
     i = 0
     while i+2 < len(hit_traj):
@@ -243,10 +251,11 @@ def generate_motion_local(sc, video, motion_dict, hit_traj, out_path):
         if not hit_start['fg']:
             i += 1
             continue
-        
         hit_med = hit_traj[i + 1]
         hit_end = hit_traj[i + 2]
         nframe = hit_end['fid'] - hit_start['fid']
+        query = (hit_start, hit_med, hit_end)
+
         best_dist = float('inf')
         best_match = None
         for motion_traj in motion_dict:
@@ -257,41 +266,50 @@ def generate_motion_local(sc, video, motion_dict, hit_traj, out_path):
                     break
                 motion_med = motion_traj[j + 1]
                 motion_end = motion_traj[j + 2]
+                result = (motion_start, motion_med, motion_end)
                 if motion_start['pos'] is None or motion_med['pos'] is None or motion_end['pos'] is None:
                     continue
                 
                 shift = (hit_start['pos'][0] - motion_start['pos'][0], 0)
-                d = L2(hit_start['pos'], add(motion_start['pos'], shift)) \
-                    + L2(hit_med['pos'], add(motion_med['pos'], shift)) \
-                    + L2(hit_end['pos'], add(motion_end['pos'], shift))
+                d = evaluate(query, result, shift)
                 if d < best_dist:
                         best_dist = d
-                        best_match = {'start':motion_start, 'end':motion_end, 'shift':shift}
-        query2result += [{'query': (hit_start, hit_med, hit_end), 
-                          'result': (best_match['start'], best_match['end']),
-                          'shift': best_match['shift']}]
+                        best_match = {'query': query, 'result': result, 'shift':shift}
+        query2result += [best_match]
         print("best_match_distance", best_dist)
         print("num frames of query", nframe)
-        print("num frames of result", best_match['end']['fid'] - best_match['start']['fid'])
+        print("num frames of result", best_match['result'][2]['fid'] - best_match['result'][0]['fid'])
         i += 2
 
-    render_motion(sc, video, query2result, out_path)
+    render_motion(sc, video, query2result, out_path)  
 
 
 def generate_motion_global(sc, video, motion_dict, hit_traj, out_path):
     '''generate motion by looking up whole query'''
+    POSE_WEIGHT = 5
+    def evaluate(query, result, shift, last_pose_end, pose_start):
+        (hit_start, hit_med, hit_end) = query
+        (motion_start, motion_med, motion_end) = result
+        d = L2(hit_start['pos'], add(motion_start['pos'], shift)) \
+                    + L2(hit_med['pos'], add(motion_med['pos'], shift)) \
+                    + L2(hit_end['pos'], add(motion_end['pos'], shift))
+        if not last_pose_end is None and not pose_start is None:
+            d += get_openpose_dist(last_pose_end, pose_start, size=(video.width, video.height)) * POSE_WEIGHT
+        return d
 
     query2result = []
     i = 0
+    last_pose_end = None
     while i+2 < len(hit_traj):
         hit_start = hit_traj[i]
         if not hit_start['fg']:
             i += 1
             continue
-        
         hit_med = hit_traj[i + 1]
         hit_end = hit_traj[i + 2]
         nframe = hit_end['fid'] - hit_start['fid']
+        query = (hit_start, hit_med, hit_end)
+
         best_dist = float('inf')
         best_match = None
         for motion_traj in motion_dict:
@@ -302,22 +320,23 @@ def generate_motion_global(sc, video, motion_dict, hit_traj, out_path):
                     break
                 motion_med = motion_traj[j + 1]
                 motion_end = motion_traj[j + 2]
+                result = (motion_start, motion_med, motion_end)
                 if motion_start['pos'] is None or motion_med['pos'] is None or motion_end['pos'] is None:
                     continue
-                
+                # load motion from openpose
+                pose_fg, _ = get_openpose_by_fid(video, motion_start['fid'])
                 shift = (hit_start['pos'][0] - motion_start['pos'][0], 0)
-                d = L2(hit_start['pos'], add(motion_start['pos'], shift)) \
-                    + L2(hit_med['pos'], add(motion_med['pos'], shift)) \
-                    + L2(hit_end['pos'], add(motion_end['pos'], shift))
+                d = evaluate(query, result, shift, last_pose_end, pose_fg)
                 if d < best_dist:
                         best_dist = d
-                        best_match = {'start':motion_start, 'end':motion_end, 'shift':shift}
-        query2result += [{'query': (hit_start, hit_med, hit_end), 
-                          'result': (best_match['start'], best_match['end']),
-                          'shift': best_match['shift']}]
+                        best_match = {'query': query, 'result': result, 'shift':shift}
+        
+        query2result += [best_match]
+        pose_fg, _ = get_openpose_by_fid(video, best_match['result'][2]['fid'])
+        last_pose_end = pose_fg
         print("best_match_distance", best_dist)
         print("num frames of query", nframe)
-        print("num frames of result", best_match['end']['fid'] - best_match['start']['fid'])
+        print("num frames of result", best_match['result'][2]['fid'] - best_match['result'][0]['fid'])
         i += 2
 
     render_motion(sc, video, query2result, out_path)    
