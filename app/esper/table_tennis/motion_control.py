@@ -1,7 +1,7 @@
 from esper.table_tennis.utils import *
 from esper.table_tennis.motion_control import *
 from esper.table_tennis.pose_utils import * 
-
+from esper.table_tennis.search import *
 import pycocotools.mask as mask_util
 
 import numpy as np
@@ -196,14 +196,15 @@ def render_motion(sc, video, query2result, out_path):
 
     for entry in query2result:
         hit_start, hit_med, hit_end = entry['query']
-        motion_start, motion_med, motion_end = entry['result']
-        shift_start = entry['shift']
+        motion_start, _, motion_end = entry['result']
+        shift_start = (hit_start['pos'][0] - motion_start['pos'][0], 0)
+        shift_end = (hit_end['pos'][0] - motion_end['pos'][0], 0)
 
         nframe = hit_end['fid'] - hit_start['fid']
         ball_traj = interpolate_trajectory_from_hit(list(entry['query']))
         # for interpolation
         time_step = 1. * (motion_end['fid'] - motion_start['fid']) / nframe
-        shift_step = 1. * (hit_end['pos'][0] - motion_end['pos'][0] - shift_start[0]) / nframe
+        shift_step = 1. * (shift_end[0] - shift_start[0]) / nframe
         
         for idx in range(nframe + 1):
             target_frame = background.copy()
@@ -239,9 +240,10 @@ def generate_motion_local(sc, video, motion_dict, hit_traj, out_path):
     def evaluate(query, result, shift):
         (hit_start, hit_med, hit_end) = query
         (motion_start, motion_med, motion_end) = result
-        d = L2(hit_start['pos'], add(motion_start['pos'], shift)) \
-                    + L2(hit_med['pos'], add(motion_med['pos'], shift)) \
-                    + L2(hit_end['pos'], add(motion_end['pos'], shift))
+        (shift_start, _, shift_end) = shift 
+        d = L2(hit_start['pos'], add(motion_start['pos'], shift_start)) \
+            + L2(hit_med['pos'], add(motion_med['pos'], shift_start)) \
+            + L2(hit_end['pos'], add(motion_end['pos'], shift_start))
         return d
 
     query2result = []
@@ -269,8 +271,10 @@ def generate_motion_local(sc, video, motion_dict, hit_traj, out_path):
                 result = (motion_start, motion_med, motion_end)
                 if motion_start['pos'] is None or motion_med['pos'] is None or motion_end['pos'] is None:
                     continue
+                shift_start = (hit_start['pos'][0] - motion_start['pos'][0], 0)
+                shift_end = (hit_end['pos'][0] - motion_end['pos'][0], 0)
+                shift = (shift_start, None, shift_end) 
                 
-                shift = (hit_start['pos'][0] - motion_start['pos'][0], 0)
                 d = evaluate(query, result, shift)
                 if d < best_dist:
                         best_dist = d
@@ -287,14 +291,24 @@ def generate_motion_local(sc, video, motion_dict, hit_traj, out_path):
 def generate_motion_global(sc, video, motion_dict, hit_traj, out_path):
     '''generate motion by looking up whole query'''
     POSE_WEIGHT = 5
-    def evaluate(query, result, shift, last_pose_end, pose_start):
+    SHIFT_WEIGHT = 5
+    TIME_WEIGHT = 5
+    def evaluate(query, result, last_pose_end=None, pose_start=None):
         (hit_start, hit_med, hit_end) = query
         (motion_start, motion_med, motion_end) = result
-        d = L2(hit_start['pos'], add(motion_start['pos'], shift)) \
-                    + L2(hit_med['pos'], add(motion_med['pos'], shift)) \
-                    + L2(hit_end['pos'], add(motion_end['pos'], shift))
+        shift_start = (hit_start['pos'][0] - motion_start['pos'][0], 0)
+        shift_end = (hit_end['pos'][0] - motion_end['pos'][0], 0)
+        # penalize shifted hit position distance
+        d = L2(hit_start['pos'], add(motion_start['pos'], shift_start)) \
+            + L2(hit_med['pos'], add(motion_med['pos'], shift_start)) \
+            + L2(hit_end['pos'], add(motion_end['pos'], shift_start))
+        # penalize sliding shift
+        # d += L2(shift_start, shift_end) * SHIFT_WEIGHT
+        # penalize timing difference
+        # d += np.abs(((hit_end['fid'] - hit_start['fid']) - (motion_end['fid'] - motion_start['fid']))) * TIME_WEIGHT
         if not last_pose_end is None and not pose_start is None:
-            d += get_openpose_dist(last_pose_end, pose_start, size=(video.width, video.height)) * POSE_WEIGHT
+            # consider different shift of pose
+            d += get_openpose_dist(last_pose_end[0], pose_start, size=(video.width, video.height), shift=minus(last_pose_end[1], shift_start)) * POSE_WEIGHT
         return d
 
     query2result = []
@@ -312,6 +326,7 @@ def generate_motion_global(sc, video, motion_dict, hit_traj, out_path):
 
         best_dist = float('inf')
         best_match = None
+        # dist_candidates = []
         for motion_traj in motion_dict:
             for j, motion_start in enumerate(motion_traj):
                 if not motion_start['fg']:
@@ -323,20 +338,115 @@ def generate_motion_global(sc, video, motion_dict, hit_traj, out_path):
                 result = (motion_start, motion_med, motion_end)
                 if motion_start['pos'] is None or motion_med['pos'] is None or motion_end['pos'] is None:
                     continue
+                shift_start = (hit_start['pos'][0] - motion_start['pos'][0], 0)
+                shift_end = (hit_end['pos'][0] - motion_end['pos'][0], 0)
+                shift = (shift_start, None, shift_end)    
                 # load motion from openpose
                 pose_fg, _ = get_openpose_by_fid(video, motion_start['fid'])
-                shift = (hit_start['pos'][0] - motion_start['pos'][0], 0)
-                d = evaluate(query, result, shift, last_pose_end, pose_fg)
+                d = evaluate(query, result, last_pose_end, pose_fg)
                 if d < best_dist:
                         best_dist = d
                         best_match = {'query': query, 'result': result, 'shift':shift}
+                # dist_candidates.append(d)
+        # dist_candidates.sort()
+        # print(dist_candidates)
         
         query2result += [best_match]
         pose_fg, _ = get_openpose_by_fid(video, best_match['result'][2]['fid'])
-        last_pose_end = pose_fg
+        last_pose_end = (pose_fg, best_match['shift'][2])
         print("best_match_distance", best_dist)
         print("num frames of query", nframe)
         print("num frames of result", best_match['result'][2]['fid'] - best_match['result'][0]['fid'])
         i += 2
 
     render_motion(sc, video, query2result, out_path)    
+
+
+def generate_motion_dijkstra(sc, video, motion_dict, hit_traj, out_path):
+    '''generate motion by looking up whole query'''
+    POSE_WEIGHT = 5
+    SHIFT_WEIGHT = 5
+    TIME_WEIGHT = 10
+    def evaluate(query, result, last_pose_end=None, pose_start=None):
+        (hit_start, hit_med, hit_end) = query
+        (motion_start, motion_med, motion_end) = result
+        shift_start = (hit_start['pos'][0] - motion_start['pos'][0], 0)
+        shift_end = (hit_end['pos'][0] - motion_end['pos'][0], 0)
+        # penalize shifted hit position distance
+        d = L2(hit_start['pos'], add(motion_start['pos'], shift_start)) \
+            + L2(hit_med['pos'], add(motion_med['pos'], shift_start)) \
+            + L2(hit_end['pos'], add(motion_end['pos'], shift_start))
+        # penalize sliding shift
+        # d += L2(shift_start, shift_end) * SHIFT_WEIGHT
+        # penalize timing difference
+        # d += np.abs(((hit_end['fid'] - hit_start['fid']) - (motion_end['fid'] - motion_start['fid']))) * TIME_WEIGHT
+        if not last_pose_end is None and not pose_start is None:
+            # align two pose by the right wrist in X
+            shift = pose_start._format_keypoints()[Pose.RWrist] - last_pose_end._format_keypoints()[Pose.RWrist]
+            d += get_openpose_dist(last_pose_end, pose_start, size=(video.width, video.height), shift=(int(shift[0]*video.width), 0)) * POSE_WEIGHT
+        return d
+
+
+    # build graph
+    graph = Graph()
+    query_list = []
+    result_list = []
+    pose_start_list = []
+    pose_end_list = []
+    # collect query
+    i = 0
+    while i+2 < len(hit_traj):
+        hit_start = hit_traj[i]
+        if not hit_start['fg']:
+            i += 1
+            continue
+        hit_med = hit_traj[i + 1]
+        hit_end = hit_traj[i + 2]
+        nframe = hit_end['fid'] - hit_start['fid']
+        query = (hit_start, hit_med, hit_end)
+        query_list.append(query)
+        i += 2
+    # collect motion
+    for motion_traj in motion_dict:
+        for j, motion_start in enumerate(motion_traj):
+            if not motion_start['fg']:
+                continue
+            if j + 2 >= len(motion_traj):
+                break
+            motion_med = motion_traj[j + 1]
+            motion_end = motion_traj[j + 2]
+            result = (motion_start, motion_med, motion_end)
+            if motion_start['pos'] is None or motion_med['pos'] is None or motion_end['pos'] is None:
+                continue
+            result_list.append(result)
+            pose_start, _ = get_openpose_by_fid(video, motion_start['fid'])
+            pose_end, _ = get_openpose_by_fid(video, motion_end['fid'])
+            pose_start_list.append(pose_start)
+            pose_end_list.append(pose_end)
+
+    last_pose_end = None
+    graph.add_node('S')
+    for query_idx, query in enumerate(query_list):
+        # (hit_start, hit_med, hit_end) = query
+        for result_idx, result in enumerate(result_list):
+            # (motion_start, motion_med, motion_end) = result
+            # shift_end = (hit_end['pos'][0] - motion_end['pos'][0], 0)
+            # shift = (shift_start, None, shift_end) 
+            graph.add_node((query_idx, result_idx))
+            if query_idx == 0:
+                graph.add_edge('S', (query_idx, result_idx), evaluate(query, result))
+            else:
+                for result_idx_prev, result_prev in enumerate(result_list):
+                    graph.add_edge((query_idx-1, result_idx_prev), (query_idx, result_idx), evaluate(query, result, pose_end_list[result_idx_prev], pose_start_list[result_idx]))        
+    graph.add_node('E')
+    for result_idx, result in enumerate(result_list):
+        graph.add_edge((query_idx, result_idx), 'E', 0)
+
+    distances, shortest_path = dijkstra(graph, 'S', 'E')
+    query2result = []
+    for idx, (query_idx, result_idx) in enumerate(shortest_path[1 : -1]):
+        print(query_idx)
+        query2result += [{'query': query_list[query_idx], 'result': result_list[result_idx]}]
+        print("best_match_distance", distances[idx])
+
+    render_motion(sc, video, query2result, out_path)

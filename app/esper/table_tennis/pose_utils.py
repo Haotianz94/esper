@@ -119,60 +119,70 @@ def collect_histogram(pose_list):
     return hist_all
 
 
-def get_openpose_dist(poseA, poseB):
-	kpA = poseA._format_keypoints()
-	kpB = poseB._format_keypoints()
-	dist = 0
-	num_valid_kp = 0
-	for i in range(Pose.POSE_KEYPOINTS):
-		if tuple(kpA[i, :2]) == (0, 0) or tuple(kpB[i, :2]) == (0, 0):
-			continue
-		dist += np.linalg.norm(kpA[i, :2] - kpB[i, :2])
-		num_valid_kp += 1
-	return dist / num_valid_kp
+def get_openpose_dist(poseA, poseB, size=None, shift=None):
+    kpA = poseA._format_keypoints().copy()
+    kpB = poseB._format_keypoints().copy()
+    if not size is None:
+        kpA[:, 0] *= size[0]
+        kpA[:, 1] *= size[1]
+        kpB[:, 0] *= size[0]
+        kpB[:, 1] *= size[1]
+    if not shift is None:
+        # shift is in pixel
+        kpA[:, 0] += shift[0]
+        kpA[:, 1] += shift[1]
+
+    dist = 0
+    num_valid_kp = 0
+    for i in range(Pose.POSE_KEYPOINTS):
+        if tuple(kpA[i, :2]) == (0, 0) or tuple(kpB[i, :2]) == (0, 0):
+            continue
+        dist += np.linalg.norm(kpA[i, :2] - kpB[i, :2])
+        num_valid_kp += 1
+    return dist / num_valid_kp
 
 
 def get_nearest_openpose(target_pose, fid2pose):
-	best_dist = np.inf
-	best_key = None
-	for fid, pose in fid2pose.items():
-		dist = get_openpose_dist(target_pose, pose)
-		if dist < best_dist:
-			best_dist = dist
-			best_key = (fid, pose)
-	print("smallest distance: ", best_dist)
-	return best_key
+    best_dist = np.inf
+    best_key = None
+    for fid, pose in fid2pose.items():
+        dist = get_openpose_dist(target_pose, pose)
+        if dist < best_dist:
+            best_dist = dist
+            best_key = (fid, pose)
+    print("smallest distance: ", best_dist)
+    return best_key
 
 
 def visualize_openpose_stick(img, pose, color):
-	def draw_stick(pt1, pt2):
-		if pt1 != (0, 0) and pt2 != (0, 0):
-			cv2.line(img, pt1, pt2, color, 3)
+    def draw_stick(pt1, pt2):
+        if pt1 != (0, 0) and pt2 != (0, 0):
+            cv2.line(img, pt1, pt2, color, 3)
 
-	H, W = img.shape[:2]
-	kp = pose._format_keypoints()
-	kp = [(int(pt[0] * W), int(pt[1] * H)) for pt in kp]
-	for i in range(Pose.POSE_KEYPOINTS - 1):
-		if tuple(kp[i][:2]) != (0, 0):
-			cv2.circle(img, kp[i], 8, color, -1)
+    H, W = img.shape[:2]
+    kp = pose._format_keypoints()
+    kp = [(int(pt[0] * W), int(pt[1] * H)) for pt in kp]
+    for i in range(Pose.POSE_KEYPOINTS - 1):
+        if tuple(kp[i][:2]) != (0, 0):
+            cv2.circle(img, kp[i], 8, color, -1)
 
-	# draw_stick(kp[Pose.Nose], kp[Pose.Neck])
+    # draw_stick(kp[Pose.Nose], kp[Pose.Neck])
 
-	draw_stick(kp[Pose.Neck], kp[Pose.LShoulder])
-	draw_stick(kp[Pose.LShoulder], kp[Pose.LElbow])
-	draw_stick(kp[Pose.LElbow], kp[Pose.LWrist])
-	
-	draw_stick(kp[Pose.Neck], kp[Pose.RShoulder])
-	draw_stick(kp[Pose.RShoulder], kp[Pose.RElbow])
-	draw_stick(kp[Pose.RElbow], kp[Pose.RWrist])
+    draw_stick(kp[Pose.Neck], kp[Pose.LShoulder])
+    draw_stick(kp[Pose.LShoulder], kp[Pose.LElbow])
+    draw_stick(kp[Pose.LElbow], kp[Pose.LWrist])
+    
+    draw_stick(kp[Pose.Neck], kp[Pose.RShoulder])
+    draw_stick(kp[Pose.RShoulder], kp[Pose.RElbow])
+    draw_stick(kp[Pose.RElbow], kp[Pose.RWrist])
 
-	draw_stick(kp[Pose.Neck], kp[Pose.LHip])
-	draw_stick(kp[Pose.LHip], kp[Pose.LKnee])
-	draw_stick(kp[Pose.LKnee], kp[Pose.LAnkle])
-	
-	draw_stick(kp[Pose.Neck], kp[Pose.RHip])
-	draw_stick(kp[Pose.RHip], kp[Pose.RKnee])
-	draw_stick(kp[Pose.RKnee], kp[Pose.RAnkle])
+    draw_stick(kp[Pose.Neck], kp[Pose.LHip])
+    draw_stick(kp[Pose.LHip], kp[Pose.LKnee])
+    draw_stick(kp[Pose.LKnee], kp[Pose.LAnkle])
+    
+    draw_stick(kp[Pose.Neck], kp[Pose.RHip])
+    draw_stick(kp[Pose.RHip], kp[Pose.RKnee])
+    draw_stick(kp[Pose.RKnee], kp[Pose.RAnkle])
 
 
 def get_densepose_dist(poseA, poseB):
@@ -228,8 +238,8 @@ def visualize_densepose_stick(img, keyps, color):
     draw_stick(keyps[:2, 14], keyps[:2, 16])
 
 
-def get_openpose_by_fid(video_id, fid):
-    pose_list = list(Pose.objects.filter(frame__video_id=video_id, frame__number=fid))
+def get_openpose_by_fid(video, fid):
+    pose_list = list(Pose.objects.filter(frame__video_id=video.id, frame__number=fid))
     if len(pose_list) < 2:
         print(fid, len(pose_list))
         return None, None
