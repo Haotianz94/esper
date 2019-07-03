@@ -1,5 +1,6 @@
 from django.db.models import F, Q
 from operator import itemgetter, attrgetter
+import subprocess as sp
 
 # import query sets
 from query.models import Video, Face, Pose
@@ -17,6 +18,22 @@ from vgrid import VGridSpec, VideoMetadata, VideoBlockFormat, LabelState
 from vgrid_jupyter import VGridWidget
 
 # ============== Visualization help functions ============== 
+
+def load_frame_by_path(video_path, fid):
+    while True:
+        try:
+            r = requests.get(
+                'http://frameserver:7500/fetch', params={
+                    'path': video_path,
+                    'frame': fid,
+                })
+            break
+        except requests.ConnectionError:
+            pass
+    img = cv2.imdecode(np.fromstring(r.content, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+    if img is None:
+        raise Exception("Bad frame {} for {}".format(fid, video_path))
+    return img
 
 def create_montage_from_images(imgs,
                  output_path=None,
@@ -76,6 +93,17 @@ def create_video_montage(intervals, out_path, width=1920, num_cols=10, aspect_ra
                      width=width, num_cols=num_cols, target_height = int(1. * width / num_cols / aspect_ratio))
     mix_audio(intervals_selected, out_path=audio_path, decrease_volume=decrease_volume, align=align)
     concat_video_audio(video_path, audio_path, out_path)
+
+
+def concat_videos_simple(paths, out_path):
+    if out_path is None:
+        out_path = tempfile.NamedTemporaryFile(suffix='.avi', delete=False).name
+    flist_path = tempfile.NamedTemporaryFile(suffix='.txt', delete=True).name
+    with open(flist_path, 'w') as f:
+        for p in paths:
+            f.write("file '{}''\n".format(p))
+    cmd = "ffmpeg -y -f concat -safe 0 -i {} -c copy {}".format(flist_path, out_path)
+    sp.check_call(cmd, shell=True)
 
 
 # ============== Rekall help functions ============== 

@@ -1,8 +1,11 @@
 from scannerpy import Client, DeviceType
 from scannerpy.storage import NamedVideoStream, NamedStream
 from scannertools import maskrcnn_detection
+from scannertools import densepose_detection
 from query.models import Video
 from esper.table_tennis.utils import *
+
+from detectron.utils.vis import vis_keypoints
 
 import cv2
 import random
@@ -238,8 +241,8 @@ def visualize_densepose_stick(img, keyps, color):
     draw_stick(keyps[:2, 14], keyps[:2, 16])
 
 
-def get_openpose_by_fid(video, fid):
-    pose_list = list(Pose.objects.filter(frame__video_id=video.id, frame__number=fid))
+def get_openpose_by_fid(video_name, fid):
+    pose_list = list(Pose.objects.filter(frame__video__path__contains=video_name, frame__number=fid))
     if len(pose_list) < 2:
         print(fid, len(pose_list))
         return None, None
@@ -257,37 +260,6 @@ def get_openpose_by_fid(video, fid):
     poseA_neck = poseA._format_keypoints()[Pose.Neck]
     poseB_neck = poseB._format_keypoints()[Pose.Neck]
     if poseA_neck[1] >= poseB_neck[1]:
-        pose_fg = poseA 
-        pose_bg = poseB 
-    else:
-        pose_fg = poseB 
-        pose_bg = poseA 
-    return pose_fg, pose_bg
-
-
-def get_densepose_by_fid(sc, video_name, fid):
-    densepose_stream = NamedStream(sc, video_name + '_densepose')
-    seq = sc.sequence(densepose_stream._name)
-    obj = seq.load(workers=1, rows=[fid])
-    densepose = next(obj)
-
-    if len(densepose['bbox']) < 2:
-        print(fid, len(densepose['bbox']))
-        return None, None
-    print(densepose['segms'].shape)
-    # filter two player
-    neck_shoulder_dist = []
-    for pose in densepose['keyp']:
-        if tuple(pose[:2, 5]) == (0, 0) or tuple(pose[:2, 6]) == (0, 0):
-            neck_shoulder_dist += [-1]
-        else:
-            neck_shoulder_dist += [np.linalg.norm(pose[:2, 5] - pose[:2, 6])] 
-
-    top2 = np.argsort(neck_shoulder_dist)[-2:]
-    poseA, poseB = densepose['keyp'][top2[0]], densepose['keyp'][top2[1]]
-    # poseA_neck = poseA[:2, 5]
-    # poseB_neck = poseB[:2, 5]
-    if poseA[1, 5] >= poseB[1, 5]:
         pose_fg = poseA 
         pose_bg = poseB 
     else:
@@ -323,3 +295,127 @@ def get_maskrcnn_by_fid(sc, video_name, fid):
         mask_fg = playerB['mask'] 
         mask_bg = playerA['mask'] 
     return mask_fg, mask_bg
+
+
+class Person(object):
+    Nose = 0
+    Leye = 1
+    Reye = 2
+    Lear = 3
+    Rear = 4
+    LShoulder = 5
+    RShoulder = 6
+    LElbow = 7
+    RElbow = 8
+    LWrist = 9
+    RWrist = 10
+    LHip = 11
+    RHip = 12
+    LKnee = 13
+    RKnee = 14
+    LAnkle = 15
+    RAnkle = 16
+    KP_THRESH = 0
+    KP_NUM = 17
+
+    def __init__(self, bbox, keyp, mask, body=None, score=None):
+        self.bbox = bbox.astype(np.int64)
+        self.keyp = keyp
+        self.mask = mask
+        self.body = body
+        self.score = score
+
+    def align_keypoint(self, other, key=None):
+        '''Align other's keyp to self. by joint key'''
+        if not key is None and self.keyp[2, key] > self.KP_THRESH and other.keyp[2, key] > self.KP_THRESH:
+            shift = self.keyp[:2, key] - other.keyp[:2, key]
+        else:
+            shift = (self.keyp[:2, self.LShoulder] + self.keyp[:2, self.RShoulder]) / 2 - \
+                (other.keyp[:2, self.LShoulder] + other.keyp[:2, self.RShoulder]) / 2
+        aligned_keyp = other.keyp.copy()
+        aligned_keyp[:, 0] += shift[0]    
+        aligned_keyp[:, 1] += shift[1]
+        return aligned_keyp    
+
+    def blend_keypoint(self, other, weight, key=None):
+        blend_keyp = self.keyp.copy()
+        # blend_keyp[:2] = self.keyp[:2] * weight + self.align_keypoint(other, key)[:2] * (1 - weight)
+        self_keyp_avg = np.mean(self.keyp[:2, self.LShoulder: self.RShoulder+1], axis=0)
+        other_keyp_avg = np.mean(other.keyp[:2, self.LShoulder: self.RShoulder+1], axis=0)
+        for i in range(self.KP_NUM):
+            if other.keyp[2, i] > self.KP_THRESH:
+                blend_keyp[:2, i] = self_keyp_avg + (self.keyp[:2, i] - self_keyp_avg) * weight + (other.keyp[:2, i] - other_keyp_avg) * (1 - weight)
+        # blend_keyp[2:] = np.min((self.keyp[2:], other.keyp[2:]), axis=0)
+        return blend_keyp
+
+    def draw_keypoint(self, image):
+        return vis_keypoints(image, self.keyp.astype(np.int64), kp_thresh=2, alpha=1)
+
+    def get_crop_box(self, im_size=(1080, 1920)):
+        cx, cy = (self.bbox[0] + self.bbox[2]) // 2, (self.bbox[1] + self.bbox[3]) // 2
+        crop_width = 640
+        crop_box = [cx - crop_width // 2, min(self.bbox[3] + 30, im_size[0]) - crop_width]
+        crop_box += [crop_box[0] + crop_width, crop_box[1] + crop_width]
+        if crop_box[0] < 0 or crop_box[2] > im_size[1] or crop_box[1] < 0 or crop_box[3] > im_size[0]:
+            print(crop_box)
+            return None
+        else:
+            return crop_box
+
+### hacky
+hit_annotation = pickle.load(open('/app/data/pkl/hit_annotation.pkl', 'rb'))
+frame_ids_dict = {}
+for k, v in hit_annotation.items():
+    hit_dict = []
+    for h in v.values():
+        hit_dict += h
+    frame_ids = [i for point in hit_dict for i in range(point[0]['fid']-25, point[-1]['fid']+25) ]
+    frame_ids.sort()
+    frame_ids_dict[k] = frame_ids
+### hacky
+def get_densepose_by_fid(sc, video_name, fid):
+    def fid2idx(fid):
+        return frame_ids_dict[video_name].index(fid)
+
+    densepose_stream = NamedStream(sc, video_name + '_densepose')
+    seq = sc.sequence(densepose_stream._name)
+    obj = seq.load(workers=1, rows=[fid2idx(fid)])
+    metadata = next(obj)
+
+    assert len(metadata) >= 2, "Player not detected!"
+    
+    # filter two player by shoulder dist
+    # shoulder_dist = []
+    # for person in metadata:
+    #     if person['keyp'][2, Person.LShoulder] < Person.KP_THRESH or person['keyp'][2, Person.RShoulder] < Person.KP_THRESH:
+    #         shoulder_dist += [-1]
+    #     else:
+    #         shoulder_dist += [np.linalg.norm(person['keyp'][:2, Person.LShoulder] - person['keyp'][:2, Person.RShoulder])] 
+    # top2 = np.argsort(shoulder_dist)[-2:]
+    # personA = Person(metadata[top2[0]]['bbox'], metadata[top2[0]]['keyp'], metadata[top2[0]]['mask'], score=metadata[top2[0]]['score'])
+    # personB = Person(metadata[top2[1]]['bbox'], metadata[top2[1]]['keyp'], metadata[top2[1]]['mask'], score=metadata[top2[1]]['score'])
+    # if personA.keyp[1, 5] >= personB.keyp[1, 5]:
+    #     person_fg = personA
+    #     person_bg = personB 
+    # else:
+    #     person_fg = personB
+    #     person_bg = personA 
+
+    # filter two player by bbox area
+    bbox_area = []
+    for person in metadata:
+        area = (person['bbox'][2] - person['bbox'][0]) * (person['bbox'][3] - person['bbox'][1])
+        bbox_area.append(area)
+    top2 = np.argsort(bbox_area)[-2:]
+    person_fg = person_bg = None
+    personA = Person(metadata[top2[0]]['bbox'], metadata[top2[0]]['keyp'], metadata[top2[0]]['mask'], score=metadata[top2[0]]['score'])
+    personB = Person(metadata[top2[1]]['bbox'], metadata[top2[1]]['keyp'], metadata[top2[1]]['mask'], score=metadata[top2[1]]['score'])
+    if personA.keyp[1, Person.LShoulder] >= personB.keyp[1, Person.LShoulder]:
+        person_fg = personA
+        person_bg = personB 
+    else:
+        person_fg = personB
+        person_bg = personA 
+
+    return person_fg, person_bg
+

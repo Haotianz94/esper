@@ -3,10 +3,18 @@ from esper.table_tennis.motion_control import *
 from esper.table_tennis.pose_utils import * 
 from esper.table_tennis.search import *
 import pycocotools.mask as mask_util
+from detectron.utils.vis import vis_keypoints
 
 import numpy as np
 import cv2
 import pickle
+from scipy import ndimage
+
+
+INTERPOLATION_WINDOW_SIZE = 6
+BACKGROUND_FRAME_PATH = '/app/data/tabletennis_background.jpg'
+FRAME_H, FRAME_W = 1080, 1920
+VIDEO_DIR = '/app/data/videos'
 
 
 def L2(pt1, pt2):
@@ -187,53 +195,92 @@ def generate_motion_without_hitlabel(sc, video, fid2densepose, motion_dict, hit_
 ##### Generate motion with hit label
 #########################################################################
 
-def render_motion(sc, video, query2result, out_path):
+def render_motion(sc, query2result, out_path, interpolation=False, draw_stick=False):
     # hacky start
-    background = load_frame(video, 39050, [])
-    video_name = video.item_name()
+    window_size = INTERPOLATION_WINDOW_SIZE
+    pix2pix_dir = '/app/result/pix2pixHD/stick2human'
+    # background = load_frame(video, 39050, [])
+    background = cv2.imread(BACKGROUND_FRAME_PATH)
     # hacky end
-    videowriter = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc('M','J','P','G'), 8, (video.width, video.height))
 
-    for entry in query2result:
-        hit_start, hit_med, hit_end = entry['query']
-        motion_start, _, motion_end = entry['result']
+    def load_interpolation(person, hash, fid):
+        path = '{}/test_B/{}_{}_synthesized_image.jpg'.format(pix2pix_dir, hash, fid)
+        if not os.path.exists(path):
+            return None
+        image = cv2.imread(path)
+        # assert image is not None, 'Cannot load {}'.format(path)
+        crop_box = person.get_crop_box(im_size=(video.height, video.width))
+        if crop_box is None:
+            return None
+        frame = np.zeros((video.height, video.width, 3), dtype=np.uint8)
+        frame[crop_box[1]: crop_box[3], crop_box[0]: crop_box[2]] = image
+        return frame
+
+    videowriter = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc('M','J','P','G'), 25, (FRAME_W, FRAME_H))
+
+    for entry_idx, entry in enumerate(query2result):
+        hit_start, hit_med, hit_end = entry['query']['hit_start'], entry['query']['hit_med'], entry['query']['hit_end']
+        motion_start, motion_end = entry['result']['motion_start'], entry['result']['motion_end']
+        video_name = entry['result']['video_name']
         shift_start = (hit_start['pos'][0] - motion_start['pos'][0], 0)
         shift_end = (hit_end['pos'][0] - motion_end['pos'][0], 0)
 
         nframe = hit_end['fid'] - hit_start['fid']
-        ball_traj = interpolate_trajectory_from_hit(list(entry['query']))
-        # for interpolation
+        ball_traj = interpolate_trajectory_from_hit([hit_start, hit_med, hit_end])
+
         time_step = 1. * (motion_end['fid'] - motion_start['fid']) / nframe
         shift_step = 1. * (shift_end[0] - shift_start[0]) / nframe
         
-        for idx in range(nframe + 1):
+        for fid in range(nframe + 1):
             target_frame = background.copy()
             
             # interpolate motion to match hit
-            source_fid = motion_start['fid'] + int(np.round(idx * time_step))
-            source_frame = load_frame(video, source_fid, []) 
+            source_fid = motion_start['fid'] + int(np.round(fid * time_step))
 
             # load mask from maskrcnn database
-            mask_fg, mask_bg = get_maskrcnn_by_fid(sc, video_name, source_fid)
-            source_mask = mask_util.decode(mask_fg)
+            person_fg, person_bg = get_densepose_by_fid(sc, video_name, source_fid)
+            source_mask = mask_util.decode(person_fg.mask)
+            # source_mask = ndimage.binary_dilation((source_mask > 0), iterations=30)
+            
+            if draw_stick:
+                source_frame = np.ones_like(background) * 255
+                visualize_densepose_stick(source_frame, person_fg.keyp, (0, 255, 0))           
+            else:
+                source_frame = load_frame_by_path('{}/{}.mp4'.format(VIDEO_DIR, video_name), source_fid) 
+
+            interpolation_done = False
+            if interpolation:
+                if (entry_idx > 0 and source_fid - motion_start['fid'] < window_size) or \
+                   (entry_idx < len(query2result) - 1 and motion_end['fid'] - source_fid < window_size):
+                    source_frame_interpolation = load_interpolation(person_fg, hash_query(video.id, entry['query']), source_fid)
+                    if not source_frame_interpolation is None:
+                        interpolation_done = True
+                        source_frame = source_frame_interpolation
+                        source_mask = ndimage.binary_dilation((source_mask > 0), iterations=30)
 
             # load player mask with shift
-            shift = add(shift_start, (int(idx * shift_step), 0))
+            shift = add(shift_start, (int(fid * shift_step), 0))
             source_frame = np.roll(source_frame, shift, axis=(1, 0))
             source_mask = np.roll(source_mask, shift, axis=(1, 0))
             
             # stitch player to background
             target_frame[source_mask == 1] = source_frame[source_mask == 1]
+
+            if interpolation_done:
+                contours, _ = cv2.findContours(
+                source_mask.astype(np.uint8), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+                cv2.drawContours(target_frame, contours, -1, (0, 0, 255), 1, cv2.LINE_AA)
             
             # draw ball
-            cv2.circle(target_frame, ball_traj[idx]['pos'], 12, (255, 255, 255), -1)
-            if idx == 0 or idx == nframe:
-                cv2.circle(target_frame, ball_traj[idx]['pos'], 12, (0, 0, 255), -1)
+            cv2.circle(target_frame, ball_traj[fid]['pos'], 12, (255, 255, 255), -1)
+            if fid == 0 or fid == nframe:
+                cv2.circle(target_frame, ball_traj[fid]['pos'], 12, (0, 0, 255), -1)
             
             videowriter.write(target_frame)
     videowriter.release()
 
 
+# Not upgraded
 def generate_motion_local(sc, video, motion_dict, hit_traj, out_path):
     '''generate motion by looking up single triangle in hit trajectory'''
 
@@ -288,6 +335,7 @@ def generate_motion_local(sc, video, motion_dict, hit_traj, out_path):
     render_motion(sc, video, query2result, out_path)  
 
 
+# Not upgraded
 def generate_motion_global(sc, video, motion_dict, hit_traj, out_path):
     '''generate motion by looking up whole query'''
     POSE_WEIGHT = 5
@@ -362,28 +410,28 @@ def generate_motion_global(sc, video, motion_dict, hit_traj, out_path):
     render_motion(sc, video, query2result, out_path)    
 
 
-def generate_motion_dijkstra(sc, video, motion_dict, hit_traj, out_path):
+def generate_motion_dijkstra(sc, motion_dict, hit_traj, out_path=None, interpolation=False, draw_stick=False):
     '''generate motion by looking up whole query'''
     POSE_WEIGHT = 5
     SHIFT_WEIGHT = 5
     TIME_WEIGHT = 10
-    def evaluate(query, result, last_pose_end=None, pose_start=None):
-        (hit_start, hit_med, hit_end) = query
-        (motion_start, motion_med, motion_end) = result
-        shift_start = (hit_start['pos'][0] - motion_start['pos'][0], 0)
-        shift_end = (hit_end['pos'][0] - motion_end['pos'][0], 0)
+    def evaluate(query, result, last_pose_end=None):
+        # hit_start, hit_med, hit_end = query
+        # (motion_start, motion_med, motion_end) = result
+        shift_start = (query['hit_start']['pos'][0] - result['motion_start']['pos'][0], 0)
+        shift_end = (query['hit_end']['pos'][0] - result['motion_end']['pos'][0], 0)
         # penalize shifted hit position distance
-        d = L2(hit_start['pos'], add(motion_start['pos'], shift_start)) \
-            + L2(hit_med['pos'], add(motion_med['pos'], shift_start)) \
-            + L2(hit_end['pos'], add(motion_end['pos'], shift_start))
+        d = L2(query['hit_start']['pos'], add(result['motion_start']['pos'], shift_start)) \
+            + L2(query['hit_med']['pos'], add(result['motion_med']['pos'], shift_start)) \
+            + L2(query['hit_end']['pos'], add(result['motion_end']['pos'], shift_start))
         # penalize sliding shift
         # d += L2(shift_start, shift_end) * SHIFT_WEIGHT
         # penalize timing difference
         # d += np.abs(((hit_end['fid'] - hit_start['fid']) - (motion_end['fid'] - motion_start['fid']))) * TIME_WEIGHT
-        if not last_pose_end is None and not pose_start is None:
+        if not last_pose_end is None and not result['pose_start'] is None:
             # align two pose by the right wrist in X
             shift = pose_start._format_keypoints()[Pose.RWrist] - last_pose_end._format_keypoints()[Pose.RWrist]
-            d += get_openpose_dist(last_pose_end, pose_start, size=(video.width, video.height), shift=(int(shift[0]*video.width), 0)) * POSE_WEIGHT
+            d += get_openpose_dist(last_pose_end, result['pose_start'], size=(FRAME_W, FRAME_H), shift=(int(shift[0]*FRAME_W), 0)) * POSE_WEIGHT
         return d
 
 
@@ -391,8 +439,6 @@ def generate_motion_dijkstra(sc, video, motion_dict, hit_traj, out_path):
     graph = Graph()
     query_list = []
     result_list = []
-    pose_start_list = []
-    pose_end_list = []
     # collect query
     i = 0
     while i+2 < len(hit_traj):
@@ -403,28 +449,33 @@ def generate_motion_dijkstra(sc, video, motion_dict, hit_traj, out_path):
         hit_med = hit_traj[i + 1]
         hit_end = hit_traj[i + 2]
         nframe = hit_end['fid'] - hit_start['fid']
-        query = (hit_start, hit_med, hit_end)
+        query = {'hit_start': hit_start, 'hit_med': hit_med, 'hit_end': hit_end}
         query_list.append(query)
         i += 2
-    # collect motion
-    for motion_traj in motion_dict:
-        for j, motion_start in enumerate(motion_traj):
-            if not motion_start['fg']:
-                continue
-            if j + 2 >= len(motion_traj):
-                break
-            motion_med = motion_traj[j + 1]
-            motion_end = motion_traj[j + 2]
-            result = (motion_start, motion_med, motion_end)
-            if motion_start['pos'] is None or motion_med['pos'] is None or motion_end['pos'] is None:
-                continue
-            result_list.append(result)
-            pose_start, _ = get_openpose_by_fid(video, motion_start['fid'])
-            pose_end, _ = get_openpose_by_fid(video, motion_end['fid'])
-            pose_start_list.append(pose_start)
-            pose_end_list.append(pose_end)
 
-    last_pose_end = None
+    # collect motion (should move out of this)
+    for video_name, motion_dict_sub in motion_dict.items():
+        for motion_traj in motion_dict_sub:
+            for j, motion_start in enumerate(motion_traj):
+                if j == 0 or not motion_start['fg']:
+                    continue
+                if j + 2 >= len(motion_traj):
+                    break
+                motion_med = motion_traj[j + 1]
+                motion_end = motion_traj[j + 2]
+                if motion_start['pos'] is None or motion_med['pos'] is None or motion_end['pos'] is None:
+                    continue
+                pose_start, _ = get_openpose_by_fid(video_name, motion_start['fid'])
+                pose_end, _ = get_openpose_by_fid(video_name, motion_end['fid'])
+                result = {'video_name': video_name,
+                          'motion_start': motion_start, 
+                          'motion_med': motion_med, 
+                          'motion_end': motion_end,
+                          'pose_start': pose_start,
+                          'pose_end': pose_end
+                          }
+                result_list.append(result)
+
     graph.add_node('S')
     for query_idx, query in enumerate(query_list):
         # (hit_start, hit_med, hit_end) = query
@@ -437,7 +488,7 @@ def generate_motion_dijkstra(sc, video, motion_dict, hit_traj, out_path):
                 graph.add_edge('S', (query_idx, result_idx), evaluate(query, result))
             else:
                 for result_idx_prev, result_prev in enumerate(result_list):
-                    graph.add_edge((query_idx-1, result_idx_prev), (query_idx, result_idx), evaluate(query, result, pose_end_list[result_idx_prev], pose_start_list[result_idx]))        
+                    graph.add_edge((query_idx-1, result_idx_prev), (query_idx, result_idx), evaluate(query, result, result_prev['pose_end']))        
     graph.add_node('E')
     for result_idx, result in enumerate(result_list):
         graph.add_edge((query_idx, result_idx), 'E', 0)
@@ -445,8 +496,68 @@ def generate_motion_dijkstra(sc, video, motion_dict, hit_traj, out_path):
     distances, shortest_path = dijkstra(graph, 'S', 'E')
     query2result = []
     for idx, (query_idx, result_idx) in enumerate(shortest_path[1 : -1]):
-        print(query_idx)
+        # print(query_idx)
         query2result += [{'query': query_list[query_idx], 'result': result_list[result_idx]}]
         print("best_match_distance", distances[idx])
 
-    render_motion(sc, video, query2result, out_path)
+    if not interpolation:
+        render_motion(sc, query2result, out_path, interpolation, draw_stick)
+    else:
+        interpolate_motion(sc, query2result)
+        return query2result
+
+
+def interpolate_motion(sc, video, query2result):
+    # hacky start
+    window_size = INTERPOLATION_WINDOW_SIZE
+    pix2pix_dir = '/app/result/pix2pixHD/stick2human'
+    # hacky end
+
+    for entry_idx, entry in enumerate(query2result):
+        if entry_idx == 0:
+            continue
+        query_prev = query2result[entry_idx-1]['query']
+        query_next = entry['query']
+        result_prev = query2result[entry_idx-1]['result']
+        result_next = entry['result']
+
+        for i in range(window_size):
+            weight = 1. * i / window_size + 0.5
+            # blend prev
+            fid_prev = result_prev['motion_end']['fid'] - i
+            person_prev, _ = get_densepose_by_fid(sc, video_name, fid_prev)
+            fid_next = result_next['motion_start']['fid'] - i
+            person_next, _ = get_densepose_by_fid(sc, video_name, fid_next)
+            
+            blend_keyp = person_prev.blend_keypoint(person_next, weight, key=Person.RWrist)
+            image = np.ones((video.height, video.width, 3), dtype=np.uint8) * 255
+            image = vis_keypoints(image, blend_keyp.astype(np.int64), kp_thresh=2, alpha=1)
+            # image2 = np.ones((video.height, video.width, 3), dtype=np.uint8) * 255
+            # image2 = person_prev.draw_keypoint(image2)
+            # image3 = np.ones((video.height, video.width, 3), dtype=np.uint8) * 255
+            # image3 = person_next.draw_keypoint(image3)
+            # return (image, image2, image3)
+            crop_box = person_prev.get_crop_box(im_size=(video.height, video.width))
+            path = '{}/test_A/{}_{}.jpg'.format(pix2pix_dir, hash_query(video.id, query_prev), fid_prev)
+            # print(path)
+            if not crop_box is None:
+                cv2.imwrite(path, image[crop_box[1] : crop_box[3], crop_box[0] : crop_box[2], :])
+
+            # blend next
+            fid_prev = result_prev['motion_end']['fid'] + i
+            person_prev, _ = get_densepose_by_fid(sc, video_name, fid_prev)
+            fid_next = result_next['motion_start']['fid'] + i
+            person_next, _ = get_densepose_by_fid(sc, video_name, fid_next)
+
+            blend_keyp = person_next.blend_keypoint(person_prev, weight, key=Person.RWrist)
+            image = np.ones((video.height, video.width, 3), dtype=np.uint8) * 255
+            image = vis_keypoints(image, blend_keyp.astype(np.int64), kp_thresh=0, alpha=1)
+            crop_box = person_next.get_crop_box(im_size=(video.height, video.width))
+            path = '{}/test_A/{}_{}.jpg'.format(pix2pix_dir, hash_query(video.id, query_next), fid_next)
+            # print(path)
+            if not crop_box is None:
+                cv2.imwrite(path, image[crop_box[1] : crop_box[3], crop_box[0] : crop_box[2], :])
+
+
+def hash_query(video_id, query):
+    return video_id * sum([h['fid'] + h['pos'][0] + h['pos'][1] for h in query])
