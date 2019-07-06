@@ -2,7 +2,13 @@
 scanner_db
 node_modules
 data
+result
+DensePose
+maskrcnn-benchmark
+maskrcnn_benchmark.egg-info
+cocoapi
 deps/tmp
+deps/facenet
 google_images
 nets
 .cache
