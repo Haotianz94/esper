@@ -362,6 +362,19 @@ class Person(object):
         else:
             return crop_box
 
+    def get_body_center(self):
+        return np.average([self.keyp[:, self.LShoulder], self.keyp[:, self.RShoulder], self.keyp[:, self.LHip], self.keyp[:, self.RHip]], axis=0)[:2].astype(np.int)
+
+    def get_pose_dist(self, other, shift=(0, 0)):
+        dist = 0
+        num_valid_kp = 0
+        for i in range(self.KP_NUM):
+            if self.keyp[2, i] > self.KP_THRESH and other.keyp[2, i] > self.KP_THRESH:
+                dist += np.linalg.norm(self.keyp[:2, i] + np.array(shift) - other.keyp[:2, i])
+                num_valid_kp += 1
+        return dist / num_valid_kp
+
+
 ### hacky
 hit_annotation = pickle.load(open('/app/data/pkl/hit_annotation.pkl', 'rb'))
 frame_ids_dict = {}
