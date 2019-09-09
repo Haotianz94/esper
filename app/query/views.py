@@ -119,7 +119,9 @@ def subtitles(request):
     video = Video.objects.get(id=video_id)
 
     srt = video.srt_extension
-    sub_path = '/app/data/subs/orig/{}.{}.srt'.format(video.item_name(), srt)
+    sub_path = '/app/data/subs/subs10a/{}.{}.srt'.format(video.item_name(), 'word')
+#     sub_path = '/app/data/subs10/{}'.format(video.item_name())
+
 
     s = open(sub_path, 'rb').read().decode('utf-8')
     vtt = srt_to_vtt(s, 0)

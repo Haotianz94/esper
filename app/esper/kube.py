@@ -27,7 +27,7 @@ def worker_config(machine_type, **kwargs):
 
 def cluster_config(**kwargs):
     return kube.ClusterConfig(
-        id='wc-test',
+        id='ht-test',
         autoscale=True,
         master=master_config,
         **kwargs)
@@ -71,4 +71,4 @@ def make_cluster(*args, **kwargs):
         yield ScannerWrapper.create(cluster=c, enable_watchdog=False)
 
 if __name__ == '__main__':
-    cluster(cluster_config(num_workers=1, worker=worker_config('n1-standard-16'))).cli()
+    cluster(cluster_config(num_workers=1, worker=worker_config('n1-standard-32'))).cli()

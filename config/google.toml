@@ -5,8 +5,8 @@ zone = "us-east1-d"
 [storage]
 type = "google"
 bucket = "esper"
-path = "public"
-base_image_name = "esper-base"
+base_image_name = "esper-base_haotian"
+path = "public/haotian"
 
 [database]
 # type = "local"

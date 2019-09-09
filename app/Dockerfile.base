@@ -9,6 +9,14 @@ ARG cores=1
 ENV APPDIR=/app
 WORKDIR ${APPDIR}
 
+# Install gentle
+ENV NO_AVX512=1
+RUN apt-get install -y sox && \
+    git clone https://github.com/scanner-research/gentle && \
+    cd gentle && \
+    bash ./install.sh && \
+    cd /app
+
 RUN apt-get update && apt-get install -y default-jre postgresql-9.5 libpq-dev gdb
 COPY ./scripts ./scripts
 COPY ./requirements.base.txt ./
@@ -23,3 +31,5 @@ RUN if [ -f /app/scannerpatch ]; then \
     fi
 
 COPY ./.scanner.toml /root/.scanner/config.toml
+
+

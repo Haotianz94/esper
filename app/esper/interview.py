@@ -7,6 +7,7 @@ from query.models import LabeledInterview, CanonicalShow, Commercial
 # import esper utils and widgets for selection
 from esper.prelude import *
 from esper.widget import *
+from esper.captions import *
 
 import numpy as np
 import random
@@ -64,6 +65,8 @@ def interview_query(person_intrvlcol, host_intrvlcol, commercial, num_face_intrv
     (This is precomputed using rust)
     """
     # Only keep related host videos
+    
+    
     host_intrvlcol_related = {}
     for video_id in person_intrvlcol.get_allintervals():
         if video_id in host_intrvlcol.get_allintervals():

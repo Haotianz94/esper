@@ -58,6 +58,9 @@ def _init_doc_id_to_vid_id():
 DOCUMENT_ID_TO_VIDEO_ID = _init_doc_id_to_vid_id()
 VIDEO_ID_TO_DOCUMENT_ID = {v: k for k, v in DOCUMENT_ID_TO_VIDEO_ID.items()}
 
+def get_document(video_id: int):
+    doc_id = VIDEO_ID_TO_DOCUMENT_ID[video_id]
+    return DOCUMENTS[doc_id]
 
 def _doc_ids_to_video_ids(results):
     def wrapper(document_results):
