@@ -17,11 +17,9 @@ from django.db.models import Q
 def main():
 
 	print("Prepare videos and frames")
-	movie_path = '/app/data/videos/sample-clip.mp4'
-	movie_name = os.path.splitext(os.path.basename(movie_path))[0]
-	# video = Video.objects.filter(path__contains='men_single')[1]
+	# video = Video.objects.filter(path__contains='men_single_final_gold')[0]
 	# movie_path = video.path
-	# movie_name = os.path.splitext(os.path.basename(movie_path))[0]
+	# movie_name = video.item_name()
 
 	sc = Client()
 	stride = 1

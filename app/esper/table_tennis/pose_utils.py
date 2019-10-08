@@ -390,7 +390,7 @@ def get_densepose_by_fid(sc, video_name, fid):
     def fid2idx(fid):
         return frame_ids_dict[video_name].index(fid)
 
-    densepose_stream = NamedStream(sc, video_name + '_densepose')
+    densepose_stream = NamedStream(sc, video_name[:-4] + '_densepose')
     seq = sc.sequence(densepose_stream._name)
     obj = seq.load(workers=1, rows=[fid2idx(fid)])
     metadata = next(obj)
