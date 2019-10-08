@@ -3,9 +3,12 @@ import pickle
 import os
 import sys
 
+
+ESTIMATE = False    # True for using estimate to tackle larger amount of mis-align
+
 def callback(name, outputs):
     video_name = name[:name.find('.mp4')].split('/')[2]
-    path = name.replace('_align_transcript', '')
+    path = name.replace('_align_transcript{}'.format('2' if ESTIMATE else ''), '')
     
     align_dir = '/app/data/subs/aligned/'
     align_word_list = []
