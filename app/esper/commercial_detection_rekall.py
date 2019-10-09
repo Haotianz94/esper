@@ -335,10 +335,10 @@ def solve_thread(video_list, tmp_dict_path, thread_id):
     
 def solve_parallel(video_list, res_dict_path=None, nthread=64):
     
-    if os.path.exists(res_dict_path):
-        res_dict = pickle.load(open(res_dict_path, "rb" ))
-    else:
-        res_dict = {}
+#     if os.path.exists(res_dict_path):
+#         res_dict = pickle.load(open(res_dict_path, "rb" ))
+#     else:
+#         res_dict = {}
 
     num_video = len(video_list)
     print(num_video)

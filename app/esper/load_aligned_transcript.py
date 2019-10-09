@@ -4,7 +4,7 @@ import os
 import sys
 
 
-ESTIMATE = False    # True for using estimate to tackle larger amount of mis-align
+ESTIMATE = True    # True for using estimate to tackle larger amount of mis-align
 
 def callback(name, outputs):
     video_name = name[:name.find('.mp4')].split('/')[2]

@@ -21,8 +21,8 @@ import sys
 
 SEG_LENGTH = 60     # Window size(seconds) for running gentle
 FIRST_RUN = True    # True if running alignment for the first time, False for re-run on bad aligned videos
-ESTIMATE = False    # True for using estimate to tackle larger amount of mis-align
-BATCH_LOAD = False  # True when loading results from scanner database
+ESTIMATE = True    # True for using estimate to tackle larger amount of mis-align
+BATCH_LOAD = True  # True when loading results from scanner database
 LOCAL_RUN = False   # True if running on local machine, False for running on Kubernete
 
 if __name__ == "__main__":
@@ -31,12 +31,12 @@ if __name__ == "__main__":
 #     print(video_start)
 
     # Set test video list
-    video_list = open('/app/data/video_list_after_2015.txt', 'r').read().split('\n')
+    video_list = open('/app/data/video_list_2019.txt', 'r').read().split('\n')
     video_list = [int(vid) for vid in video_list]
     videos = Video.objects.filter(id__in=video_list)
     
     # Remove videos have incomplete transcript
-    addtional_field = pickle.load(open('/app/data/addtional_field_2019_first.pkl', 'rb'))
+    addtional_field = pickle.load(open('/app/data/addtional_field_2019.pkl', 'rb'))
     videos = [video for video in videos if addtional_field[video.id]['valid_transcript']]
     
     # Remove videos have inequal audio/frame time
@@ -51,19 +51,18 @@ if __name__ == "__main__":
     
     if FIRST_RUN:   
         # Remove already dumped videos
-#         res_stats = pickle.load(open('/app/result/align_stats_final_2019.pkl', 'rb'))
-#         videos = [video for video in videos if video.id not in res_stats]
-#         print('Videos unfinished:', len(videos))
-    
-    else
+        res_stats = pickle.load(open('/app/result/align_stats_final_2019.pkl', 'rb'))
+        videos = [video for video in videos if video.id not in res_stats]
+        print('Videos unfinished:', len(videos))
+    else:
         # Re-run bad align videos
         res_stats = pickle.load(open('/app/result/align_stats_final_2019.pkl', 'rb'))
         videos = [video for video in videos if video.id in res_stats and res_stats[video.id]['word_missing'] > 0.2]
         print("Videos unfinished: ", len(videos))
     
+    db = scannerpy.Database()
     # Remove videos not saved in database
-    if FIRST_RUN:
-        db = scannerpy.Database()
+    if FIRST_RUN or BATCH_LOAD:
         meta = db._load_db_metadata()
         tables_in_db= {t.name for t in meta.tables}
         videos_uncommitted = []
@@ -115,7 +114,7 @@ if __name__ == "__main__":
                   'seg_length' : 60,
                   'max_misalign' : 10,
                   'num_thread' : 1,
-                  'estimate' : True if ESTIMATE else False
+                  'estimate' : True if ESTIMATE else False,
                   'align_dir' : None,
                   'res_path' : None,
 #                   'align_dir' : '/app/result/aligned_transcript',
@@ -174,7 +173,7 @@ if __name__ == "__main__":
 ############################################################################
     else:
         cfg = cluster_config(
-            num_workers=100,
+            num_workers=50,
             worker=worker_config('n1-standard-32'))
 
         with make_cluster(cfg, no_delete=True) as db_wrapper:
