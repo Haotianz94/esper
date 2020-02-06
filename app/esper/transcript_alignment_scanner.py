@@ -1,5 +1,5 @@
 from scannertools import audio
-from scannertools.transcript_alignment import align_transcript_pipeline, TranscriptAligner
+from scannertools.transcript_alignment import align_transcript_pipeline, align_transcript_pipeline2, TranscriptAligner
 from query.models import Video
 from esper.kube import make_cluster, cluster_config, worker_config
 from esper.load_aligned_transcript import callback
@@ -21,9 +21,14 @@ import sys
 
 SEG_LENGTH = 60     # Window size(seconds) for running gentle
 FIRST_RUN = True    # True if running alignment for the first time, False for re-run on bad aligned videos
-ESTIMATE = True    # True for using estimate to tackle larger amount of mis-align
-BATCH_LOAD = True  # True when loading results from scanner database
+ESTIMATE = False    # True for using estimate to tackle larger amount of mis-align
+BATCH_LOAD = False  # True when loading results from scanner database
 LOCAL_RUN = False   # True if running on local machine, False for running on Kubernete
+
+video_list_file = '/app/data/video_list_kdd.txt'
+additional_field_file = '/app/data/addtional_field_kdd.pkl'
+result_file = '/app/result/align_stats_kdd.pkl'
+subs_dir = 'tvnews/subs_kdd/'
 
 if __name__ == "__main__":
     
@@ -31,12 +36,12 @@ if __name__ == "__main__":
 #     print(video_start)
 
     # Set test video list
-    video_list = open('/app/data/video_list_2019.txt', 'r').read().split('\n')
+    video_list = open(video_list_file, 'r').read().split('\n')
     video_list = [int(vid) for vid in video_list]
     videos = Video.objects.filter(id__in=video_list)
     
     # Remove videos have incomplete transcript
-    addtional_field = pickle.load(open('/app/data/addtional_field_2019.pkl', 'rb'))
+    addtional_field = pickle.load(open(additional_field_file, 'rb'))
     videos = [video for video in videos if addtional_field[video.id]['valid_transcript']]
     
     # Remove videos have inequal audio/frame time
@@ -51,12 +56,18 @@ if __name__ == "__main__":
     
     if FIRST_RUN:   
         # Remove already dumped videos
-        res_stats = pickle.load(open('/app/result/align_stats_final_2019.pkl', 'rb'))
+        if os.path.exists(result_file):
+            res_stats = pickle.load(open(result_file, 'rb'))
+        else:
+            res_stats = {}
         videos = [video for video in videos if video.id not in res_stats]
         print('Videos unfinished:', len(videos))
     else:
         # Re-run bad align videos
-        res_stats = pickle.load(open('/app/result/align_stats_final_2019.pkl', 'rb'))
+        if os.path.exists(result_file):
+            res_stats = pickle.load(open(result_file, 'rb'))
+        else:
+            res_stats = {}
         videos = [video for video in videos if video.id in res_stats and res_stats[video.id]['word_missing'] > 0.2]
         print("Videos unfinished: ", len(videos))
     
@@ -81,7 +92,7 @@ if __name__ == "__main__":
         print("Videos uncommitted:", len(videos_uncommitted))
         print("Videos committed:", len(tables_committed))
 
-#     exit()
+    exit()
     
 ############################################################################
 #Dump results with batch
@@ -101,7 +112,7 @@ if __name__ == "__main__":
               for video in videos]
     
     # Set up transcripts 
-    captions = [audio.CaptionSource('tvnews/subs2019/' + video.item_name(), 
+    captions = [audio.CaptionSource(subs_dir + video.item_name(), 
                                     max_time=addtional_field[video.id]['audio_duration'], 
                                     window_size=SEG_LENGTH) 
                 for video in videos]
@@ -125,7 +136,11 @@ if __name__ == "__main__":
 # Run alignment (local)
 ############################################################################
     if LOCAL_RUN:
-        result = align_transcript_pipeline(db=db, audio=audios, captions=captions, cache=False, 
+        if FIRST_RUN:
+            result = align_transcript_pipeline(db=db, audio=audios, captions=captions, cache=False, 
+                                                       run_opts=run_opts, align_opts=align_opts)
+        else:
+            result = align_transcript_pipeline2(db=db, audio=audios, captions=captions, cache=False, 
                                                        run_opts=run_opts, align_opts=align_opts)
 
         # Dump results for local run
@@ -178,5 +193,9 @@ if __name__ == "__main__":
 
         with make_cluster(cfg, no_delete=True) as db_wrapper:
             db = db_wrapper.db
-            align_transcript_pipeline(db=db, audio=audios, captions=captions, cache=False, 
-                                                           run_opts=run_opts, align_opts=align_opts)
+            if FIRST_RUN:
+                align_transcript_pipeline(db=db, audio=audios, captions=captions, cache=False, 
+                                                               run_opts=run_opts, align_opts=align_opts)
+            else:
+                align_transcript_pipeline2(db=db, audio=audios, captions=captions, cache=False, 
+                                                               run_opts=run_opts, align_opts=align_opts)
