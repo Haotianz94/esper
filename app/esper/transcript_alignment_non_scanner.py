@@ -169,7 +169,7 @@ class TranscriptAligner():
         extract audio between [start, end] into a local .aac file
         """
         duration = end - start
-        cmd = 'ffmpeg -i ' + self.media_path + ' -vn -acodec copy '
+        cmd = 'ffmpeg -loglevel error -i ' + self.media_path + ' -vn -acodec copy '
         cmd += '-ss {:d} -t {:d} '.format(start, duration)
         audio_path = tempfile.NamedTemporaryFile(suffix='.aac').name
         cmd += audio_path
@@ -459,12 +459,19 @@ if __name__ == "__main__":
     transcript_dir = '/app/data/subs/subs_kdd/'
     video_dir = '/app/data/videos/'
     google_storage_dir = 'gs://esper/tvnews/videos/'
+    result_pkl = '/app/result/aligned_kdd_first.pkl'
     
-    video_list = ['CNNW_20150105_020000_Life_Itself']
+    video_list = open('/app/data/video_list_kdd2.txt', 'r').read().split('\n')[:-1]
     
-    res_stats = {}
+    if os.path.exists(result_pkl):
+        res_stats = pickle.load(open(result_pkl, 'rb'))
+    else:
+        res_stats = {}
     for video_name in video_list:
         print(video_name)
+        if video_name in res_stats:
+            continue
+            
         video_path = os.path.join(video_dir, video_name + '.mp4')
         transcript_path=os.path.join(transcript_dir, video_name)
         
@@ -489,5 +496,10 @@ if __name__ == "__main__":
         res = aligner.run()
         res_stats[video_name] = res
         print('Alignment finished in %f s' % (time.time() - start_time))
+        
+        # Delete video
+        cmd = 'rm ' + video_path
+        os.system(cmd)
+        print('Delete video done')
 
-    pickle.dump(res_stats, open('/app/result/aligned_kdd_first.pkl', 'wb'))
+        pickle.dump(res_stats, open(result_pkl, 'wb'))
